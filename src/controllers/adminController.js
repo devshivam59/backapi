@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Order = require('../models/Order');
 const Trade = require('../models/Trade');
+const zerodhaService = require('../services/zerodhaServiceInstance');
 
 exports.listUsers = async (req, res, next) => {
   try {
@@ -30,6 +31,62 @@ exports.monitorOrders = async (req, res, next) => {
     const orders = await Order.find().populate('instrument user').sort({ createdAt: -1 }).limit(100);
     const trades = await Trade.find().populate('instrument user order').sort({ createdAt: -1 }).limit(100);
     res.json({ orders, trades });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.updateZerodhaCredentials = async (req, res, next) => {
+  try {
+    const { apiKey, apiSecret } = req.body;
+
+    if (!apiKey || !apiSecret) {
+      return res.status(400).json({ message: 'apiKey and apiSecret are required' });
+    }
+
+    const result = await zerodhaService.updateCredentials({ apiKey, apiSecret });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.generateZerodhaAccessToken = async (req, res, next) => {
+  try {
+    const { requestToken } = req.body;
+
+    if (!requestToken) {
+      return res.status(400).json({ message: 'requestToken is required' });
+    }
+
+    const tokenData = await zerodhaService.generateAccessToken(requestToken);
+
+    res.json({
+      message: 'Access token generated successfully',
+      ...tokenData
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.refreshZerodhaAccessToken = async (req, res, next) => {
+  try {
+    const result = await zerodhaService.refreshAccessToken({ reason: 'manual' });
+
+    res.json({
+      message: 'Access token refreshed successfully',
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getZerodhaStatus = async (req, res, next) => {
+  try {
+    const status = await zerodhaService.getCredentialStatus();
+    res.json(status);
   } catch (error) {
     next(error);
   }
