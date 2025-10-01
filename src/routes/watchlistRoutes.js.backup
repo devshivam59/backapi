@@ -1,0 +1,26 @@
+const express = require('express');
+const router = express.Router();
+const watchlistController = require('../controllers/watchlistController');
+const auth = require('../middleware/auth');
+
+// Initialize Zerodha API
+router.post('/zerodha/initialize', auth, watchlistController.initializeZerodha);
+
+// Get market status
+router.get('/market-status', auth, watchlistController.getMarketStatus);
+
+// Watchlist CRUD operations
+router.post('/', auth, watchlistController.createWatchlist);
+router.get('/', auth, watchlistController.getUserWatchlists);
+router.get('/:id', auth, watchlistController.getWatchlistWithLivePrices);
+router.delete('/:id', auth, watchlistController.deleteWatchlist);
+
+// Instrument management in watchlist
+router.post('/:id/instruments', auth, watchlistController.addInstrumentToWatchlist);
+router.delete('/:id/instruments/:instrumentId', auth, watchlistController.removeInstrumentFromWatchlist);
+
+// Live price endpoints
+router.get('/prices/live', auth, watchlistController.getLivePrice);
+router.get('/prices/historical/:instrumentToken', auth, watchlistController.getHistoricalData);
+
+module.exports = router;
