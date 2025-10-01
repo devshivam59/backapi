@@ -1,17 +1,22 @@
 const express = require('express');
 const router = express.Router();
-const ZerodhaService = require('../services/zerodhaService');
+const zerodhaService = require('../services/zerodhaServiceInstance');
 
-// Initialize Zerodha service instance
-const zerodhaService = new ZerodhaService();
+const respondWithError = (res, error, defaultMessage) => {
+  const status = error.status || 500;
+  res.status(status).json({
+    message: defaultMessage,
+    error: error.message
+  });
+};
 
 // Get Zerodha login URL
-router.get('/zerodha/login-url', (req, res) => {
+router.get('/zerodha/login-url', async (req, res) => {
   try {
-    const loginUrl = zerodhaService.getLoginURL();
+    const loginUrl = await zerodhaService.getLoginURL();
     res.json({ loginUrl });
   } catch (error) {
-    res.status(500).json({ message: 'Failed to generate login URL', error: error.message });
+    respondWithError(res, error, 'Failed to generate login URL');
   }
 });
 
@@ -19,11 +24,11 @@ router.get('/zerodha/login-url', (req, res) => {
 router.post('/zerodha/generate-token', async (req, res) => {
   try {
     const { requestToken } = req.body;
-    
+
     if (!requestToken) {
       return res.status(400).json({ message: 'Request token is required' });
     }
-    
+
     const tokenData = await zerodhaService.generateAccessToken(requestToken);
     res.json({
       message: 'Access token generated successfully',
@@ -31,10 +36,7 @@ router.post('/zerodha/generate-token', async (req, res) => {
       marketStatus: zerodhaService.getMarketStatus()
     });
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to generate access token', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to generate access token');
   }
 });
 
@@ -42,22 +44,19 @@ router.post('/zerodha/generate-token', async (req, res) => {
 router.post('/zerodha/initialize', (req, res) => {
   try {
     const { accessToken } = req.body;
-    
+
     if (!accessToken) {
       return res.status(400).json({ message: 'Access token is required' });
     }
-    
+
     zerodhaService.initialize(accessToken);
-    
+
     res.json({
       message: 'Zerodha API initialized successfully',
       marketStatus: zerodhaService.getMarketStatus()
     });
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to initialize Zerodha API', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to initialize Zerodha API');
   }
 });
 
@@ -67,10 +66,7 @@ router.get('/market-status', (req, res) => {
     const status = zerodhaService.getMarketStatus();
     res.json(status);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get market status', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get market status');
   }
 });
 
@@ -80,10 +76,7 @@ router.get('/profile', async (req, res) => {
     const profile = await zerodhaService.getProfile();
     res.json(profile);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get user profile', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get user profile');
   }
 });
 
@@ -91,20 +84,17 @@ router.get('/profile', async (req, res) => {
 router.get('/prices/live', async (req, res) => {
   try {
     const { tokens } = req.query;
-    
+
     if (!tokens) {
       return res.status(400).json({ message: 'Instrument tokens are required' });
     }
-    
+
     const tokenList = tokens.split(',').map(t => t.trim()).filter(t => t);
     const prices = await zerodhaService.getCurrentPrice(tokenList);
-    
+
     res.json(prices);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get live prices', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get live prices');
   }
 });
 
@@ -113,20 +103,17 @@ router.get('/prices/historical/:instrumentToken', async (req, res) => {
   try {
     const { instrumentToken } = req.params;
     const { interval, from, to } = req.query;
-    
+
     if (!interval || !from || !to) {
       return res.status(400).json({
         message: 'Interval, from date, and to date are required'
       });
     }
-    
+
     const data = await zerodhaService.getHistoricalData(instrumentToken, interval, from, to);
     res.json(data);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get historical data', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get historical data');
   }
 });
 
@@ -134,22 +121,19 @@ router.get('/prices/historical/:instrumentToken', async (req, res) => {
 router.post('/subscribe', (req, res) => {
   try {
     const { tokens } = req.body;
-    
+
     if (!tokens || !Array.isArray(tokens)) {
       return res.status(400).json({ message: 'Tokens array is required' });
     }
-    
+
     zerodhaService.subscribeToTokens(tokens);
-    res.json({ 
+    res.json({
       message: 'Subscribed to price updates',
       tokens: tokens,
       marketStatus: zerodhaService.getMarketStatus()
     });
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to subscribe to price updates', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to subscribe to price updates');
   }
 });
 
@@ -157,21 +141,18 @@ router.post('/subscribe', (req, res) => {
 router.post('/unsubscribe', (req, res) => {
   try {
     const { tokens } = req.body;
-    
+
     if (!tokens || !Array.isArray(tokens)) {
       return res.status(400).json({ message: 'Tokens array is required' });
     }
-    
+
     zerodhaService.unsubscribeFromTokens(tokens);
-    res.json({ 
+    res.json({
       message: 'Unsubscribed from price updates',
-      tokens: tokens 
+      tokens: tokens
     });
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to unsubscribe from price updates', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to unsubscribe from price updates');
   }
 });
 
@@ -182,10 +163,7 @@ router.get('/instruments/:exchange?', async (req, res) => {
     const instruments = await zerodhaService.getInstruments(exchange);
     res.json(instruments);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get instruments', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get instruments');
   }
 });
 
@@ -249,10 +227,7 @@ router.get('/:id', async (req, res) => {
     
     res.json(watchlist);
   } catch (error) {
-    res.status(500).json({ 
-      message: 'Failed to get watchlist', 
-      error: error.message 
-    });
+    respondWithError(res, error, 'Failed to get watchlist');
   }
 });
 
