@@ -1,3 +1,7 @@
 node_modules
 .env
 uploads
+kite_token.json
+kite_credentials.json
+login_page_*.png
+login_page_*.html
