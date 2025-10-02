@@ -1,6 +1,6 @@
-const { KiteConnect, KiteTicker } = require("kiteconnect");
-const fs = require("fs");
-const path = require("path");
+const { KiteConnect, KiteTicker } = require('kiteconnect');
+const fs = require('fs');
+const path = require('path');
 
 class ZerodhaService {
   constructor() {
@@ -15,10 +15,65 @@ class ZerodhaService {
     this.livePriceCache = new Map();
     this.priceCallbacks = new Map();
     this.tokenFilePath = path.join(process.cwd(), 'kite_token.json');
-    
+    this.credentialsFilePath = path.join(process.cwd(), 'kite_credentials.json');
+    this.lastTokenData = null;
+    this.lastProfile = null;
+
     // Initialize market hours check
     this.updateMarketHours();
     setInterval(() => this.updateMarketHours(), 60000); // Check every minute
+
+    // Load persisted credentials if available
+    this.loadCredentials();
+  }
+
+  /**
+   * Persist Zerodha credentials locally
+   */
+  saveCredentials() {
+    try {
+      const payload = {
+        apiKey: this.apiKey || null,
+        apiSecret: this.apiSecret || null,
+        updated_at: new Date().toISOString()
+      };
+
+      fs.writeFileSync(this.credentialsFilePath, JSON.stringify(payload, null, 2));
+      console.log('💾 Zerodha credentials saved to', this.credentialsFilePath);
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to save credentials:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Load Zerodha credentials from disk
+   */
+  loadCredentials() {
+    try {
+      if (!fs.existsSync(this.credentialsFilePath)) {
+        return false;
+      }
+
+      const data = JSON.parse(fs.readFileSync(this.credentialsFilePath, 'utf8'));
+
+      if (data.apiKey) {
+        this.apiKey = data.apiKey;
+        process.env.API_KEY = data.apiKey;
+      }
+
+      if (data.apiSecret) {
+        this.apiSecret = data.apiSecret;
+        process.env.API_SECRET = data.apiSecret;
+      }
+
+      console.log('🔐 Zerodha credentials loaded from file');
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to load credentials:', error);
+      return false;
+    }
   }
 
   /**
@@ -28,11 +83,13 @@ class ZerodhaService {
     try {
       if (fs.existsSync(this.tokenFilePath)) {
         const tokenData = JSON.parse(fs.readFileSync(this.tokenFilePath, 'utf8'));
-        
+
+        this.lastTokenData = tokenData;
+
         // Check if token is still valid (tokens expire daily)
         const tokenAge = new Date() - new Date(tokenData.generated_at || tokenData.login_time);
         const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-        
+
         if (tokenAge < maxAge && tokenData.access_token) {
           this.accessToken = tokenData.access_token;
           console.log('✅ Access token loaded from file');
@@ -40,6 +97,7 @@ class ZerodhaService {
           return true;
         } else {
           console.log('⚠️ Access token expired, need to regenerate');
+          this.accessToken = null;
           return false;
         }
       } else {
@@ -53,20 +111,85 @@ class ZerodhaService {
   }
 
   /**
+   * Persist the latest access token details to disk
+   */
+  persistToken(sessionData = {}, source = 'unknown') {
+    if (!sessionData && !this.accessToken) {
+      throw new Error('No token data available to persist');
+    }
+
+    const nowIso = new Date().toISOString();
+    const baseData = this.lastTokenData || {};
+
+    const payload = {
+      access_token: sessionData.access_token || this.accessToken || baseData.access_token || null,
+      refresh_token: sessionData.refresh_token || baseData.refresh_token || null,
+      user_id: sessionData.user_id || baseData.user_id || null,
+      user_name: sessionData.user_name || baseData.user_name || null,
+      user_shortname: sessionData.user_shortname || baseData.user_shortname || null,
+      avatar_url: sessionData.avatar_url || baseData.avatar_url || null,
+      user_type: sessionData.user_type || baseData.user_type || null,
+      email: sessionData.email || baseData.email || null,
+      public_token: sessionData.public_token || baseData.public_token || null,
+      api_key: sessionData.api_key || this.apiKey || baseData.api_key || null,
+      login_time: sessionData.login_time || baseData.login_time || nowIso,
+      generated_at: sessionData.generated_at || baseData.generated_at || nowIso,
+      source: sessionData.source || source
+    };
+
+    fs.writeFileSync(this.tokenFilePath, JSON.stringify(payload, null, 2));
+    this.lastTokenData = payload;
+
+    console.log('💾 Access token persisted to', this.tokenFilePath);
+
+    return payload;
+  }
+
+  /**
    * Generate new access token using auto-login
    */
-  async generateAccessToken() {
+  async generateAccessToken(requestToken = null, options = {}) {
     try {
       console.log('🔄 Generating new access token...');
-      
-      // Import and run the auto-login module
-      const { authenticateKite } = require('../../auto-login.cjs');
-      const sessionData = await authenticateKite();
-      
+
+      let sessionData;
+      const { skipBootstrap = false } = options;
+
+      // Import the auto-login helpers lazily to avoid circular deps during require
+      const autoLoginModule = require('../../auto-login.cjs');
+
+      if (requestToken) {
+        if (!autoLoginModule.exchangeAndSave) {
+          throw new Error('exchangeAndSave helper is not available');
+        }
+        sessionData = await autoLoginModule.exchangeAndSave(requestToken);
+      } else {
+        if (!autoLoginModule.authenticateKite) {
+          throw new Error('authenticateKite helper is not available');
+        }
+        sessionData = await autoLoginModule.authenticateKite();
+      }
+
       if (sessionData && sessionData.access_token) {
         this.accessToken = sessionData.access_token;
+        const persisted = this.persistToken(sessionData, requestToken ? 'manual-exchange' : 'auto-login');
+        this.lastTokenData = persisted;
+        this.isBootstrapped = false;
+
+        // Persist token for reuse
+        if (sessionData.generated_at || sessionData.login_time) {
+          console.log('🕒 Token timestamp:', sessionData.generated_at || sessionData.login_time);
+        }
+
+        if (!skipBootstrap) {
+          await this.setupKiteConnect();
+        }
+
         console.log('✅ New access token generated successfully');
-        return true;
+        return {
+          ...sessionData,
+          source: this.lastTokenData?.source || (requestToken ? 'manual-exchange' : 'auto-login')
+        };
       } else {
         throw new Error('Failed to generate access token');
       }
@@ -79,57 +202,34 @@ class ZerodhaService {
   /**
    * Initialize KiteConnect with access token
    */
-  async bootstrap() {
-    if (this.isBootstrapped && this.accessToken) {
+  async bootstrap({ force = false } = {}) {
+    if (this.isBootstrapped && this.accessToken && !force) {
       return;
     }
 
     try {
       console.log('🚀 Bootstrapping Zerodha service...');
-      
+
+      if (!this.apiKey || !this.apiSecret) {
+        throw new Error('Zerodha API credentials are not configured. Set API_KEY and API_SECRET.');
+      }
+
       // Try to load existing token first
       let tokenLoaded = this.loadAccessToken();
-      
+
       // If token loading failed, generate new one
       if (!tokenLoaded) {
-        await this.generateAccessToken();
+        await this.generateAccessToken(null, { skipBootstrap: true });
       }
 
       if (!this.accessToken) {
         throw new Error('No access token available');
       }
 
-      // Initialize KiteConnect
-      this.kc = new KiteConnect({
-        api_key: this.apiKey,
-        access_token: this.accessToken
-      });
+      await this.setupKiteConnect();
 
-      // Test the connection
-      try {
-        const profile = await this.kc.getProfile();
-        console.log('✅ KiteConnect initialized successfully');
-        console.log('User:', profile.user_name, '('+profile.user_id+')');
-      } catch (testError) {
-        console.log('❌ Token test failed, regenerating...');
-        await this.generateAccessToken();
-        
-        this.kc = new KiteConnect({
-          api_key: this.apiKey,
-          access_token: this.accessToken
-        });
-        
-        const profile = await this.kc.getProfile();
-        console.log('✅ KiteConnect initialized with new token');
-        console.log('User:', profile.user_name, '('+profile.user_id+')');
-      }
-
-      // Initialize WebSocket ticker for live data
-      this.initializeTicker();
-      
-      this.isBootstrapped = true;
       console.log('🎉 Zerodha service bootstrap completed');
-      
+
     } catch (error) {
       console.error('❌ Bootstrap failed:', error);
       this.isBootstrapped = false;
@@ -138,9 +238,115 @@ class ZerodhaService {
   }
 
   /**
+   * Initialize KiteConnect client and ticker using the current token
+   */
+  async setupKiteConnect(options = {}) {
+    const { forceTickerConnect = false, allowAutoRegeneration = true } = options;
+
+    if (!this.accessToken) {
+      throw new Error('No access token available');
+    }
+
+    // Disconnect any existing ticker before re-initializing
+    if (this.ticker && this.ticker.connected && this.ticker.connected()) {
+      this.ticker.disconnect();
+    }
+
+    this.kc = new KiteConnect({
+      api_key: this.apiKey,
+      access_token: this.accessToken
+    });
+
+    let profile;
+
+    // Test the connection to ensure token validity
+    try {
+      profile = await this.kc.getProfile();
+      console.log('✅ KiteConnect initialized successfully');
+      console.log('User:', profile.user_name, '(' + profile.user_id + ')');
+    } catch (testError) {
+      console.log('❌ Token validation failed:', testError.message);
+
+      if (!allowAutoRegeneration) {
+        this.kc = null;
+        this.isBootstrapped = false;
+        this.lastProfile = null;
+        throw new Error(`Access token validation failed: ${testError.message}`);
+      }
+
+      console.log('Attempting to generate a new token automatically...');
+      await this.generateAccessToken(null, { skipBootstrap: true });
+
+      this.kc = new KiteConnect({
+        api_key: this.apiKey,
+        access_token: this.accessToken
+      });
+
+      profile = await this.kc.getProfile();
+      console.log('✅ KiteConnect initialized with new token');
+      console.log('User:', profile.user_name, '(' + profile.user_id + ')');
+    }
+
+    this.lastProfile = profile;
+
+    // Initialize WebSocket ticker for live data
+    this.initializeTicker({ forceConnect: forceTickerConnect });
+
+    this.isBootstrapped = true;
+
+    return profile;
+  }
+
+  /**
+   * Update Zerodha API credentials
+   */
+  async updateCredentials({ apiKey, apiSecret }) {
+    if (!apiKey || !apiSecret) {
+      throw new Error('API key and API secret are required');
+    }
+
+    console.log('🔐 Updating Zerodha API credentials');
+
+    this.apiKey = apiKey;
+    this.apiSecret = apiSecret;
+    process.env.API_KEY = apiKey;
+    process.env.API_SECRET = apiSecret;
+
+    // Reset current session/token state
+    this.accessToken = null;
+    this.isBootstrapped = false;
+    this.kc = null;
+
+    if (this.ticker && this.ticker.connected && this.ticker.connected()) {
+      this.ticker.disconnect();
+    }
+    this.ticker = null;
+
+    this.subscribedTokens.clear();
+    this.livePriceCache.clear();
+    this.priceCallbacks.clear();
+    this.lastTokenData = null;
+
+    // Remove any existing token cache on credential change
+    try {
+      if (fs.existsSync(this.tokenFilePath)) {
+        fs.unlinkSync(this.tokenFilePath);
+      }
+    } catch (err) {
+      console.warn('⚠️ Unable to remove existing token file:', err.message);
+    }
+
+    this.saveCredentials();
+
+    return {
+      message: 'Zerodha API credentials updated successfully'
+    };
+  }
+
+  /**
    * Initialize WebSocket ticker
    */
-  initializeTicker() {
+  initializeTicker({ forceConnect = false } = {}) {
     if (!this.accessToken) return;
 
     try {
@@ -174,6 +380,21 @@ class ZerodhaService {
 
       this.ticker.on('connect', () => {
         console.log('📡 WebSocket ticker connected');
+        if (this.subscribedTokens.size > 0) {
+          const tokensToResubscribe = Array.from(this.subscribedTokens)
+            .map(token => parseInt(token))
+            .filter(token => !isNaN(token) && token > 0);
+
+          if (tokensToResubscribe.length > 0) {
+            try {
+              this.ticker.subscribe(tokensToResubscribe);
+              this.ticker.setMode(this.ticker.modeLTP, tokensToResubscribe);
+              console.log('🔁 Resubscribed to tokens after reconnect:', tokensToResubscribe);
+            } catch (resubscribeError) {
+              console.error('Failed to resubscribe after reconnect:', resubscribeError);
+            }
+          }
+        }
       });
 
       this.ticker.on('disconnect', () => {
@@ -185,7 +406,7 @@ class ZerodhaService {
       });
 
       // Connect during market hours
-      if (this.isMarketHours) {
+      if (forceConnect || this.isMarketHours) {
         this.ticker.connect();
       }
 
@@ -277,6 +498,114 @@ class ZerodhaService {
     } catch (error) {
       console.error('Error unsubscribing from tokens:', error);
     }
+  }
+
+  /**
+   * Manually set the access token (admin helper)
+   */
+  async setManualAccessToken({
+    accessToken,
+    userId = null,
+    userName = null,
+    userShortName = null,
+    email = null,
+    publicToken = null,
+    loginTime = null,
+    generatedAt = null,
+    skipValidation = false,
+    forceTickerConnect = false
+  } = {}) {
+    if (!accessToken) {
+      throw new Error('accessToken is required');
+    }
+
+    const sanitizedToken = String(accessToken).trim();
+
+    if (!sanitizedToken) {
+      throw new Error('accessToken cannot be empty');
+    }
+
+    if (!this.apiKey) {
+      throw new Error('Set Zerodha API credentials before updating the access token.');
+    }
+
+    const tokenPayload = {
+      access_token: sanitizedToken,
+      user_id: userId,
+      user_name: userName,
+      user_shortname: userShortName,
+      email,
+      public_token: publicToken,
+      login_time: loginTime,
+      generated_at: generatedAt,
+      api_key: this.apiKey,
+      source: 'manual'
+    };
+
+    if (skipValidation) {
+      if (this.ticker && this.ticker.connected && this.ticker.connected()) {
+        this.ticker.disconnect();
+      }
+      this.accessToken = sanitizedToken;
+      this.kc = new KiteConnect({
+        api_key: this.apiKey,
+        access_token: this.accessToken
+      });
+      this.lastProfile = null;
+      this.livePriceCache.clear();
+      this.initializeTicker({ forceConnect: forceTickerConnect });
+      this.isBootstrapped = true;
+
+      const persisted = this.persistToken(tokenPayload, 'manual');
+
+      return {
+        ...persisted,
+        validated: false
+      };
+    }
+
+    const validationClient = new KiteConnect({
+      api_key: this.apiKey,
+      access_token: sanitizedToken
+    });
+
+    let profile;
+
+    try {
+      profile = await validationClient.getProfile();
+    } catch (error) {
+      throw new Error(`Access token validation failed: ${error.message}`);
+    }
+
+    if (this.ticker && this.ticker.connected && this.ticker.connected()) {
+      this.ticker.disconnect();
+    }
+
+    this.accessToken = sanitizedToken;
+    this.kc = validationClient;
+    this.lastProfile = profile;
+    this.livePriceCache.clear();
+    this.initializeTicker({ forceConnect: forceTickerConnect });
+    this.isBootstrapped = true;
+
+    const persisted = this.persistToken({
+      ...tokenPayload,
+      user_id: profile.user_id || tokenPayload.user_id,
+      user_name: profile.user_name || tokenPayload.user_name,
+      user_shortname: profile.user_shortname || tokenPayload.user_shortname,
+      email: profile.email || tokenPayload.email
+    }, 'manual');
+
+    return {
+      ...persisted,
+      validated: true,
+      profile: {
+        user_id: profile.user_id,
+        user_name: profile.user_name,
+        user_shortname: profile.user_shortname || null,
+        email: profile.email || null
+      }
+    };
   }
 
   /**
@@ -502,18 +831,62 @@ class ZerodhaService {
     console.log('🔄 Forcing token refresh...');
     this.accessToken = null;
     this.isBootstrapped = false;
-    
+    this.lastProfile = null;
+
     // Disconnect ticker
     if (this.ticker && this.ticker.connected()) {
       this.ticker.disconnect();
     }
-    
+
     // Clear caches
     this.livePriceCache.clear();
     this.subscribedTokens.clear();
-    
+
     // Bootstrap again
     await this.bootstrap();
+  }
+
+  /**
+   * Refresh token helper exposed for admin routes
+   */
+  async refreshAccessToken({ reason = 'manual' } = {}) {
+    console.log(`🔁 Refresh access token requested (reason: ${reason})`);
+    await this.refreshToken();
+
+    return {
+      access_token: this.accessToken,
+      reason,
+      generated_at: this.lastTokenData ? (this.lastTokenData.generated_at || this.lastTokenData.login_time) : null
+    };
+  }
+
+  /**
+   * Credential and token status summary
+   */
+  async getCredentialStatus() {
+    const status = {
+      apiKeyConfigured: Boolean(this.apiKey),
+      tokenFileExists: fs.existsSync(this.tokenFilePath),
+      credentialsFileExists: fs.existsSync(this.credentialsFilePath),
+      accessTokenAvailable: Boolean(this.accessToken),
+      lastTokenGeneratedAt: this.lastTokenData ? (this.lastTokenData.generated_at || this.lastTokenData.login_time) : null,
+      lastTokenSource: this.lastTokenData ? this.lastTokenData.source || null : null,
+      lastProfile: this.lastProfile ? {
+        user_id: this.lastProfile.user_id,
+        user_name: this.lastProfile.user_name,
+        user_shortname: this.lastProfile.user_shortname || null,
+        email: this.lastProfile.email || null
+      } : null
+    };
+
+    if (status.lastTokenGeneratedAt) {
+      const generatedAtDate = new Date(status.lastTokenGeneratedAt);
+      if (!isNaN(generatedAtDate.getTime())) {
+        status.tokenAgeHours = Math.round((Date.now() - generatedAtDate.getTime()) / (60 * 60 * 1000));
+      }
+    }
+
+    return status;
   }
 }
 

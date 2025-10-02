@@ -10,6 +10,10 @@ const {
   API_KEY, API_SECRET, KITE_USER, KITE_PASS, KITE_TOTP_SECRET, REDIRECT_URI
 } = process.env;
 
+if (!API_KEY || !API_SECRET || !KITE_USER || !KITE_PASS || !REDIRECT_URI) {
+  throw new Error('Missing required environment variables for Zerodha auto-login. Please set API_KEY, API_SECRET, KITE_USER, KITE_PASS, and REDIRECT_URI.');
+}
+
 const kite = new KiteConnect({ api_key: API_KEY });
 const loginUrl = kite.getLoginURL({ redirect_uri: REDIRECT_URI });
 

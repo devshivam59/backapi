@@ -12,5 +12,6 @@ router.get('/zerodha/status', adminController.getZerodhaStatus);
 router.post('/zerodha/credentials', adminController.updateZerodhaCredentials);
 router.post('/zerodha/generate-access-token', adminController.generateZerodhaAccessToken);
 router.post('/zerodha/refresh-access-token', adminController.refreshZerodhaAccessToken);
+router.post('/zerodha/access-token', adminController.setZerodhaAccessToken);
 
 module.exports = router;

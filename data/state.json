@@ -1,0 +1,30 @@
+{
+  "users": [],
+  "sessions": [],
+  "passwordResets": [],
+  "instruments": [],
+  "instrumentImports": [],
+  "instrumentSources": [],
+  "instrumentImportRuns": [],
+  "watchlists": [],
+  "watchlistItems": [],
+  "orders": [],
+  "trades": [],
+  "positions": [],
+  "holdings": [],
+  "walletAccounts": {},
+  "walletTransactions": [],
+  "ledgerEntries": [],
+  "notifications": [],
+  "auditLogs": [],
+  "idempotency": {},
+  "marketSnapshots": {},
+  "automationJobs": [],
+  "zerodha": {
+    "accessToken": null,
+    "validTill": null,
+    "profile": null,
+    "source": null,
+    "updatedAt": null
+  }
+}

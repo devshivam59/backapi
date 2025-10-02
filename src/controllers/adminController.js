@@ -83,6 +83,52 @@ exports.refreshZerodhaAccessToken = async (req, res, next) => {
   }
 };
 
+exports.setZerodhaAccessToken = async (req, res, next) => {
+  try {
+    const {
+      accessToken,
+      userId,
+      userName,
+      userShortName,
+      email,
+      publicToken,
+      loginTime,
+      generatedAt,
+      skipValidation = false,
+      forceTickerConnect = false
+    } = req.body;
+
+    if (!accessToken) {
+      return res.status(400).json({ message: 'accessToken is required' });
+    }
+
+    const skipValidationFlag = skipValidation === true || skipValidation === 'true';
+    const forceTickerConnectFlag = forceTickerConnect === true || forceTickerConnect === 'true';
+
+    const result = await zerodhaService.setManualAccessToken({
+      accessToken,
+      userId,
+      userName,
+      userShortName,
+      email,
+      publicToken,
+      loginTime,
+      generatedAt,
+      skipValidation: skipValidationFlag,
+      forceTickerConnect: forceTickerConnectFlag
+    });
+
+    res.json({
+      message: skipValidationFlag
+        ? 'Access token stored without validation'
+        : 'Access token validated and stored successfully',
+      ...result
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 exports.getZerodhaStatus = async (req, res, next) => {
   try {
     const status = await zerodhaService.getCredentialStatus();
