@@ -1,0 +1,249 @@
+const Instrument = require('../models/Instrument');
+const fs = require('fs');
+const { parse } = require('csv-parse');
+
+// Get all instruments with pagination and search
+exports.getInstruments = async (req, res, next) => {
+  try {
+    const {
+      page = 1,
+      limit = 100,
+      search = "",
+      exchange = "",
+      instrument_type = "",
+      sort = "tradingsymbol",
+      order = "asc"
+    } = req.query;
+
+    // Build search query
+    const query = {};
+    
+    // Search functionality
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), "i");
+      query.$or = [
+        { tradingsymbol: searchRegex },
+        { name: searchRegex },
+        { symbol: searchRegex }
+      ];
+    }
+
+    // Filter by exchange
+    if (exchange && exchange.trim()) {
+      query.exchange = exchange.trim().toUpperCase();
+    }
+
+    // Filter by instrument type
+    if (instrument_type && instrument_type.trim()) {
+      query.instrument_type = instrument_type.trim().toUpperCase();
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(1000, Math.max(1, parseInt(limit)));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Sort options
+    const sortOrder = order === "desc" ? -1 : 1;
+    const sortObj = {};
+    sortObj[sort] = sortOrder;
+
+    // Execute query with pagination
+    const [instruments, total] = await Promise.all([
+      Instrument.find(query)
+        .sort(sortObj)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Instrument.countDocuments(query)
+    ]);
+
+    // Add live prices from mock service if available
+    const instrumentsWithPrices = instruments.map(instrument => ({
+      ...instrument,
+      // Add current price simulation
+      current_price: instrument.last_price + (Math.random() - 0.5) * 10,
+      change: (Math.random() - 0.5) * 20,
+      change_percent: (Math.random() - 0.5) * 5
+    }));
+
+    res.json({
+      success: true,
+      data: instrumentsWithPrices,
+      total: total,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        pages: Math.ceil(total / limitNum)
+      },
+      filters: {
+        search,
+        exchange,
+        instrument_type,
+        sort,
+        order
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching instruments:", error);
+    next(error);
+  }
+};
+
+exports.searchInstruments = async (req, res, next) => {
+  try {
+    const { q = "", limit = 10 } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    const searchRegex = new RegExp(q.trim(), "i");
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+
+    const instruments = await Instrument.find({
+      $or: [
+        { tradingsymbol: searchRegex },
+        { name: searchRegex },
+        { symbol: searchRegex }
+      ]
+    })
+    .select("instrument_token tradingsymbol name exchange instrument_type last_price")
+    .limit(limitNum)
+    .lean();
+
+res.json({      success: true,      data: instruments,      total: instruments.length    });
+
+  } catch (error) {
+    console.error("Error searching instruments:", error);
+    next(error);
+  }
+};
+
+/**
+ * Get a specific instrument by ID or token
+ */
+exports.getInstrument = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Try to find by instrument_token first, then by MongoDB _id
+    let instrument;
+    if (!isNaN(id)) {
+      instrument = await Instrument.findOne({ instrument_token: parseInt(id) });
+    }
+    
+    if (!instrument) {
+      instrument = await Instrument.findById(id);
+    }
+
+    if (!instrument) {
+      return res.status(404).json({
+        success: false,
+        message: "Instrument not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: instrument
+    });
+
+  } catch (error) {
+    console.error("Error fetching instrument:", error);
+    next(error);
+  }
+};
+
+/**
+ * Get instrument statistics
+ */
+exports.getInstrumentStats = async (req, res, next) => {
+  try {
+    const [
+      totalCount,
+      exchangeStats,
+      typeStats,
+      segmentStats
+    ] = await Promise.all([
+      Instrument.countDocuments(),
+      Instrument.aggregate([
+        { $group: { _id: "$exchange", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      Instrument.aggregate([
+        { $group: { _id: "$instrument_type", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ]),
+      Instrument.aggregate([
+        { $group: { _id: "$segment", count: { $sum: 1 } } },
+        { $sort: { count: -1 } }
+      ])
+    ]);
+
+    // Format the response
+    const exchanges = {};
+    exchangeStats.forEach(stat => {
+      exchanges[stat._id] = stat.count;
+    });
+
+    const instrumentTypes = {};
+    typeStats.forEach(stat => {
+      instrumentTypes[stat._id] = stat.count;
+    });
+
+    const segments = {};
+    segmentStats.forEach(stat => {
+      segments[stat._id || "Unknown"] = stat.count;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        total: totalCount,
+        exchanges,
+        instrumentTypes,
+        segments
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching instrument stats:", error);
+    next(error);
+  }
+};
+
+/**
+ * Import instruments from CSV
+ */
+exports.importInstruments = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "No file uploaded"
+      });
+    }
+
+    // For now, return a success message
+    // In a real implementation, you would parse the CSV and import the data
+    res.json({
+      success: true,
+      message: "CSV upload functionality is ready",
+      data: {
+        filename: req.file.filename,
+        size: req.file.size,
+        mimetype: req.file.mimetype
+      }
+    });
+
+  } catch (error) {
+    console.error("Error importing instruments:", error);
+    next(error);
+  }
+};

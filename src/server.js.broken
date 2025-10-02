@@ -1,0 +1,144 @@
+require('dotenv').config();
+const http = require('http');
+const { Server } = require('socket.io');
+const app = require('./app');
+const connectDatabase = require('./config/database');
+const PriceSimulator = require('./utils/priceSimulator');
+
+const PORT = process.env.PORT || 4000;
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+  },
+});
+
+const priceSimulator = new PriceSimulator(io);
+priceSimulator.start();
+
+io.on('connection', (socket) => {
+  socket.on('subscribe', (symbol) => {
+    if (symbol) {
+      priceSimulator.subscribe(socket, symbol);
+    }
+  });
+
+  socket.on('unsubscribe', (symbol) => {
+    if (symbol) {
+      priceSimulator.unsubscribe(socket, symbol);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    priceSimulator.removeSocket(socket.id);
+  });
+});
+
+const startServer = async () => {
+  await connectDatabase(process.env.MONGO_URI);
+  server.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+  });
+};
+
+startServer();
+
+
+
+// Initialize Zerodha service endpoint
+app.post('/api/watchlist/initialize', (req, res) => {
+  try {
+    console.log('Initializing Zerodha service...');
+    // Simulate successful initialization
+    res.json({
+      success: true,
+      message: 'Zerodha service initialized successfully',
+      data: {
+        status: 'initialized',
+        timestamp: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to initialize Zerodha service',
+      error: error.message
+    });
+  }
+});
+
+    
+    // Create demo token data
+    const demoTokenData = {
+      access_token: 'demo_access_token_' + Date.now(),
+      public_token: 'demo_public_token_' + Date.now(),
+      refresh_token: 'demo_refresh_token_' + Date.now(),
+      user_id: 'DEMO' + Math.floor(Math.random() * 1000),
+      user_name: 'Demo Trading User',
+      user_shortname: 'Demo',
+      email: 'demo@trading.com',
+      user_type: 'individual',
+      broker: 'ZERODHA',
+      exchanges: ['NSE', 'BSE', 'NFO', 'BFO', 'CDS', 'MCX'],
+      products: ['CNC', 'MIS', 'NRML'],
+      order_types: ['MARKET', 'LIMIT', 'SL', 'SL-M'],
+      api_key: 'demo_api_key_123456',
+      login_time: new Date().toISOString(),
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    };
+
+    // Simulate processing delay
+    setTimeout(() => {
+      res.json({
+        success: true,
+        message: 'Access token generated successfully (Demo Mode)',
+        data: demoTokenData
+      });
+    }, 2000); // 2 second delay to simulate processing
+
+  } catch (error) {
+    console.error('Kite auto-login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Auto-login failed',
+      error: error.message
+    });
+  }
+});
+
+    
+    if (!refresh_token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    // Simulate token refresh
+    const refreshedData = {
+      access_token: 'refreshed_access_token_' + Date.now(),
+      refreshed_at: new Date().toISOString(),
+      expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    };
+
+    res.json({
+      success: true,
+      message: 'Token refreshed successfully',
+      data: refreshedData
+    });
+
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Token refresh failed',
+      error: error.message
+    });
+  }
+});
+
+// Real Kite Connect routes
+app.use('/api/kite/auto-login', require('/root/backapi/src/routes/kiteRoutes'));
+app.use('/api/kite/refresh-token', require('/root/backapi/src/routes/kiteRoutes'));
+app.use('/api/kite/status', require('/root/backapi/src/routes/kiteRoutes'));
+app.use('/api/kite/clear', require('/root/backapi/src/routes/kiteRoutes'));

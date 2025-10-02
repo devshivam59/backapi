@@ -1,0 +1,59 @@
+import dotenv from "dotenv";
+import puppeteer from "puppeteer";
+import { authenticator } from "otplib";
+import fs from "fs";
+import { KiteConnect } from "kiteconnect";
+dotenv.config();
+
+const {
+  API_KEY, API_SECRET, KITE_USER, KITE_PASS, KITE_TOTP_SECRET, REDIRECT_URI
+} = process.env;
+
+const kite = new KiteConnect({ api_key: API_KEY });
+const loginUrl = kite.getLoginURL({ redirect_uri: REDIRECT_URI });
+
+const getRequestToken = async () => {
+  const browser = await puppeteer.launch({ headless: "new", args: ["--no-sandbox"] });
+  const page = await browser.newPage();
+  try {
+    await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
+
+    // Fill user + pass (selectors may change—update if needed)
+    await page.type("#userid", KITE_USER);
+    await page.type("#password", KITE_PASS);
+    await page.click("button[type=\"submit\"]");
+    await new Promise(resolve => setTimeout(resolve, 1200));
+
+    // TOTP (if enabled)
+    if (KITE_TOTP_SECRET) {
+      const code = authenticator.generate(KITE_TOTP_SECRET);
+      await page.type("#totp", String(code));
+      await page.click("button[type=\"submit\"]");
+    }
+
+    // Wait for redirect to your REDIRECT_URI (which will contain ?request_token=...)
+    await page.waitForNavigation({ waitUntil: "load", timeout: 15000 });
+
+    const finalUrl = page.url();
+    const urlObj = new URL(finalUrl);
+    const rt = urlObj.searchParams.get("request_token");
+
+    await browser.close();
+    return rt;
+  } catch (e) {
+    await browser.close();
+    throw e;
+  }
+};
+
+const exchangeAndSave = async (requestToken) => {
+  const session = await kite.generateSession(requestToken, API_SECRET);
+  kite.setAccessToken(session.access_token);
+  console.log("Saved access_token to kite_token.json");
+};
+
+(async () => {
+  const rt = await getRequestToken();
+  if (!rt) throw new Error("Failed to capture request_token.");
+  await exchangeAndSave(rt);
+})();

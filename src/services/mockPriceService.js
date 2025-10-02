@@ -1,96 +1,128 @@
-const mockPrices = {
-  // Mock prices for common instruments
-  'RELIANCE': { price: 2456.75, change: 12.50, changePercent: 0.51 },
-  'INFY': { price: 1789.30, change: -8.20, changePercent: -0.46 },
-  'TCS': { price: 3987.65, change: 45.30, changePercent: 1.15 },
-  'HDFCBANK': { price: 1654.80, change: -15.60, changePercent: -0.93 },
-  'ICICIBANK': { price: 1287.45, change: 23.75, changePercent: 1.88 },
-  'SBIN': { price: 845.20, change: 8.90, changePercent: 1.06 },
-  'NIFTY': { price: 25847.75, change: 125.30, changePercent: 0.49 },
-  'BANKNIFTY': { price: 53456.80, change: -234.50, changePercent: -0.44 }
-};
-
+// Mock price service for generating realistic live prices
 class MockPriceService {
   constructor() {
-    this.isConnected = false;
-    this.subscribers = new Set();
+    this.basePrices = {
+      'RELIANCE': 2456.75,
+      'TCS': 3987.65,
+      'INFY': 1789.30,
+      'HDFCBANK': 1654.80,
+      'ICICIBANK': 1234.50,
+      'SBIN': 789.25,
+      'LT': 3456.90,
+      'WIPRO': 567.40,
+      'MARUTI': 12345.60,
+      'BAJFINANCE': 8765.30,
+      'NIFTY': 25847.75,
+      'BANKNIFTY': 53456.80,
+      'FINNIFTY': 19876.45,
+      'GOLD': 65432.10,
+      'SILVER': 87654.30,
+      'CRUDEOIL': 6789.45,
+      'NATURALGAS': 234.56
+    };
+    
+    this.priceCache = {};
+    this.lastUpdate = {};
   }
 
-  // Simulate connection
-  connect() {
-    this.isConnected = true;
-    console.log('Mock price service connected');
-    return Promise.resolve();
-  }
-
-  // Simulate disconnection
-  disconnect() {
-    this.isConnected = false;
-    console.log('Mock price service disconnected');
-  }
-
-  // Get mock price for an instrument
   getPrice(symbol) {
-    const baseSymbol = symbol.replace(/\d+/g, '').replace(/[A-Z]{2}$/, ''); // Remove numbers and CE/PE suffix
-    const mockData = mockPrices[baseSymbol] || mockPrices[symbol];
-    
-    if (mockData) {
-      // Add some random variation to make it look live
-      const variation = (Math.random() - 0.5) * 10; // ±5 price variation
-      const price = mockData.price + variation;
-      const change = mockData.change + (Math.random() - 0.5) * 2;
-      const changePercent = (change / (price - change)) * 100;
-      
-      return {
-        instrument_token: symbol,
-        last_price: parseFloat(price.toFixed(2)),
-        change: parseFloat(change.toFixed(2)),
-        change_percent: parseFloat(changePercent.toFixed(2)),
-        volume: Math.floor(Math.random() * 1000000),
-        timestamp: new Date().toISOString()
-      };
+    if (!symbol) {
+      return null;
     }
+
+    // Clean symbol for lookup
+    const cleanSymbol = this.extractBaseSymbol(symbol);
+    const basePrice = this.basePrices[cleanSymbol];
     
-    // Return random price for unknown instruments
-    const randomPrice = 100 + Math.random() * 2000;
-    const randomChange = (Math.random() - 0.5) * 20;
-    const changePercent = (randomChange / randomPrice) * 100;
+    if (!basePrice) {
+      // Generate a random price for unknown symbols
+      return this.generateRandomPrice(symbol);
+    }
+
+    // Check if we need to update the price (every 5 seconds)
+    const now = Date.now();
+    const cacheKey = symbol;
+    
+    if (!this.lastUpdate[cacheKey] || (now - this.lastUpdate[cacheKey]) > 5000) {
+      this.priceCache[cacheKey] = this.generateLivePrice(basePrice, cleanSymbol);
+      this.lastUpdate[cacheKey] = now;
+    }
+
+    return this.priceCache[cacheKey];
+  }
+
+  extractBaseSymbol(symbol) {
+    // Extract base symbol from complex trading symbols
+    if (symbol.includes('NIFTY')) return 'NIFTY';
+    if (symbol.includes('BANKNIFTY')) return 'BANKNIFTY';
+    if (symbol.includes('FINNIFTY')) return 'FINNIFTY';
+    if (symbol.includes('RELIANCE')) return 'RELIANCE';
+    if (symbol.includes('TCS')) return 'TCS';
+    if (symbol.includes('INFY')) return 'INFY';
+    if (symbol.includes('HDFC')) return 'HDFCBANK';
+    if (symbol.includes('ICICI')) return 'ICICIBANK';
+    if (symbol.includes('SBIN')) return 'SBIN';
+    if (symbol.includes('LT')) return 'LT';
+    if (symbol.includes('WIPRO')) return 'WIPRO';
+    if (symbol.includes('MARUTI')) return 'MARUTI';
+    if (symbol.includes('BAJAJ')) return 'BAJFINANCE';
+    if (symbol.includes('GOLD')) return 'GOLD';
+    if (symbol.includes('SILVER')) return 'SILVER';
+    if (symbol.includes('CRUDE')) return 'CRUDEOIL';
+    if (symbol.includes('GAS')) return 'NATURALGAS';
+    
+    return symbol.toUpperCase();
+  }
+
+  generateLivePrice(basePrice, symbol) {
+    // Generate realistic price movements
+    const variation = (Math.random() - 0.5) * 10; // ±5 points variation
+    const currentPrice = basePrice + variation;
+    
+    // Calculate change from base price
+    const change = currentPrice - basePrice;
+    const changePercent = (change / basePrice) * 100;
+    
+    // Generate volume (random between 10K to 1M)
+    const volume = Math.floor(Math.random() * 990000) + 10000;
     
     return {
-      instrument_token: symbol,
-      last_price: parseFloat(randomPrice.toFixed(2)),
-      change: parseFloat(randomChange.toFixed(2)),
-      change_percent: parseFloat(changePercent.toFixed(2)),
-      volume: Math.floor(Math.random() * 100000),
-      timestamp: new Date().toISOString()
+      price: parseFloat(currentPrice.toFixed(2)),
+      change: parseFloat(change.toFixed(2)),
+      changePercent: parseFloat(changePercent.toFixed(2)),
+      volume: volume,
+      timestamp: new Date().toISOString(),
+      high: parseFloat((currentPrice + Math.random() * 5).toFixed(2)),
+      low: parseFloat((currentPrice - Math.random() * 5).toFixed(2)),
+      open: parseFloat((basePrice + (Math.random() - 0.5) * 3).toFixed(2))
     };
   }
 
-  // Get multiple prices
+  generateRandomPrice(symbol) {
+    // Generate random price for unknown symbols
+    const randomBase = Math.random() * 5000 + 100; // Between 100 and 5100
+    return this.generateLivePrice(randomBase, symbol);
+  }
+
+  // Get multiple prices at once
   getPrices(symbols) {
     const prices = {};
     symbols.forEach(symbol => {
       prices[symbol] = this.getPrice(symbol);
     });
-    return Promise.resolve(prices);
+    return prices;
   }
 
-  // Subscribe to price updates (mock)
-  subscribe(symbols) {
-    symbols.forEach(symbol => this.subscribers.add(symbol));
-    console.log('Subscribed to mock prices for:', symbols);
-  }
-
-  // Unsubscribe from price updates (mock)
-  unsubscribe(symbols) {
-    symbols.forEach(symbol => this.subscribers.delete(symbol));
-    console.log('Unsubscribed from mock prices for:', symbols);
-  }
-
-  // Check if service is connected
-  isServiceConnected() {
-    return this.isConnected;
+  // Simulate market status
+  isMarketOpen() {
+    const now = new Date();
+    const hour = now.getHours();
+    const day = now.getDay();
+    
+    // Market hours: 9:15 AM to 3:30 PM, Monday to Friday
+    return (day >= 1 && day <= 5) && (hour >= 9 && hour < 15);
   }
 }
 
-module.exports = MockPriceService;
+// Export singleton instance
+module.exports = new MockPriceService();

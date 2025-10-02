@@ -1,52 +1,23 @@
 const express = require('express');
-const cors = require('cors');
-const connectDB = require('./config/database');
-require('dotenv').config();
-
-const app = express();
-
-// Enhanced CORS configuration
-app.use(cors({
-  origin: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  credentials: true
-}));
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Connect to MongoDB
-connectDB();
-
-// Routes
-app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/market', require('./routes/marketRoutes'));
-app.use('/api/watchlist', require('./routes/watchlistRoutes'));
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'OK', message: 'Server is running' });
-});
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const router = express.Router();
 
 // Real Kite Connect auto-login endpoint
-app.post('/api/kite/auto-login', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     console.log('Starting real Kite auto-login process...');
     
-    const { spawn } = require('child_process');
-    const fs = require('fs');
-    const path = require('path');
-    
     // Run the actual auto-login script
-    const autoLoginPath = path.join(__dirname, '../auto-login.cjs');
+    const autoLoginPath = path.join(__dirname, '../../auto-login.cjs');
     
     if (!fs.existsSync(autoLoginPath)) {
-      throw new Error('Auto-login script not found at: ' + autoLoginPath);
+      throw new Error('Auto-login script not found');
     }
 
     const child = spawn('node', [autoLoginPath], {
-      cwd: path.join(__dirname, '..'),
+      cwd: path.join(__dirname, '../..'),
       stdio: ['pipe', 'pipe', 'pipe']
     });
 
@@ -68,7 +39,7 @@ app.post('/api/kite/auto-login', async (req, res) => {
       
       if (code === 0) {
         // Check if token file was created
-        const tokenPath = path.join(__dirname, '../kite_token.json');
+        const tokenPath = path.join(__dirname, '../../kite_token.json');
         
         if (fs.existsSync(tokenPath)) {
           try {
@@ -76,7 +47,7 @@ app.post('/api/kite/auto-login', async (req, res) => {
             
             res.json({
               success: true,
-              message: 'Real access token generated successfully',
+              message: 'Access token generated successfully',
               data: {
                 access_token: tokenData.access_token,
                 public_token: tokenData.public_token,
@@ -145,7 +116,7 @@ app.post('/api/kite/auto-login', async (req, res) => {
           stderr: stderr
         });
       }
-    }, 90000); // 90 second timeout
+    }, 60000); // 60 second timeout
 
   } catch (error) {
     console.error('Kite auto-login error:', error);
@@ -157,12 +128,72 @@ app.post('/api/kite/auto-login', async (req, res) => {
   }
 });
 
-// Get current token status
-app.get('/api/kite/status', async (req, res) => {
+// Refresh token endpoint
+router.post('/', async (req, res) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const tokenPath = path.join(__dirname, '../kite_token.json');
+    const { refresh_token } = req.body;
+    
+    if (!refresh_token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Refresh token is required'
+      });
+    }
+
+    // Use KiteConnect to refresh the token
+    const { KiteConnect } = require('kiteconnect');
+    const kite = new KiteConnect({ api_key: process.env.API_KEY });
+    
+    try {
+      const session = await kite.renewAccessToken(refresh_token, process.env.API_SECRET);
+      
+      // Update the token file
+      const tokenPath = path.join(__dirname, '../../kite_token.json');
+      let tokenData = {};
+      
+      if (fs.existsSync(tokenPath)) {
+        tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+      }
+      
+      tokenData.access_token = session.access_token;
+      tokenData.refresh_token = session.refresh_token || refresh_token;
+      tokenData.refreshed_at = new Date().toISOString();
+      
+      fs.writeFileSync(tokenPath, JSON.stringify(tokenData, null, 2));
+      
+      res.json({
+        success: true,
+        message: 'Token refreshed successfully',
+        data: {
+          access_token: session.access_token,
+          refresh_token: session.refresh_token || refresh_token,
+          refreshed_at: tokenData.refreshed_at
+        }
+      });
+      
+    } catch (refreshError) {
+      console.error('Token refresh error:', refreshError);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to refresh token',
+        error: refreshError.message
+      });
+    }
+
+  } catch (error) {
+    console.error('Token refresh error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Token refresh failed',
+      error: error.message
+    });
+  }
+});
+
+// Get current token status
+router.get('/', async (req, res) => {
+  try {
+    const tokenPath = path.join(__dirname, '../../kite_token.json');
     
     if (fs.existsSync(tokenPath)) {
       const tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
@@ -200,11 +231,9 @@ app.get('/api/kite/status', async (req, res) => {
 });
 
 // Clear token endpoint
-app.delete('/api/kite/clear', async (req, res) => {
+router.delete('/', async (req, res) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
-    const tokenPath = path.join(__dirname, '../kite_token.json');
+    const tokenPath = path.join(__dirname, '../../kite_token.json');
     
     if (fs.existsSync(tokenPath)) {
       fs.unlinkSync(tokenPath);
@@ -225,8 +254,4 @@ app.delete('/api/kite/clear', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-  console.log(`✅ Server listening on port ${PORT}`);
-  console.log('✅ Real Kite Connect endpoints added successfully');
-});
+module.exports = router;

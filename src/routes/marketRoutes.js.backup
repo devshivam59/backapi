@@ -52,25 +52,3 @@ router.post("/instruments/import",
 );
 
 module.exports = router;
-
-// Clear all instruments (admin only)
-router.delete('/instruments/clear', auth, (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin access required to clear instruments'
-    });
-  }
-  marketController.clearAllInstruments(req, res);
-});
-
-// Import instruments with replace option
-router.post('/instruments/import-replace', auth, upload.single('csvFile'), (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Admin access required to import instruments'
-    });
-  }
-  marketController.importInstrumentsWithReplace(req, res);
-});

@@ -1,0 +1,3 @@
+instrument_token,tradingsymbol,name,exchange,instrument_type,last_price,lot_size
+123456,TESTSTOCK,Test Stock Ltd,NSE,EQ,100.50,1
+789012,SAMPLE,Sample Company Ltd,NSE,EQ,250.75,1

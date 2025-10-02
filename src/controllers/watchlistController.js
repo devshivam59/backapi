@@ -1,305 +1,515 @@
-// Simple watchlist controller that only uses mock prices
+const zerodhaServiceInstance = require('../services/zerodhaServiceInstance');
+const mockPriceService = require('../services/mockPriceService');
+
 // In-memory storage for watchlists (replace with database in production)
 let watchlists = [
   {
-    id: 'demo-watchlist-1',
+    id: 'default-watchlist',
     name: 'My Watchlist',
-    instruments: [],
-    createdAt: new Date()
+    instruments: [
+      {
+        instrument_token: 256265,
+        tradingsymbol: 'RELIANCE',
+        name: 'RELIANCE INDUSTRIES LTD',
+        exchange: 'NSE',
+        segment: 'NSE',
+        instrument_type: 'EQ',
+        lot_size: 1
+      },
+      {
+        instrument_token: 738561,
+        tradingsymbol: 'INFY',
+        name: 'INFOSYS LTD',
+        exchange: 'NSE',
+        segment: 'NSE',
+        instrument_type: 'EQ',
+        lot_size: 1
+      },
+      {
+        instrument_token: 779521,
+        tradingsymbol: 'TCS',
+        name: 'TATA CONSULTANCY SERVICES LTD',
+        exchange: 'NSE',
+        segment: 'NSE',
+        instrument_type: 'EQ',
+        lot_size: 1
+      }
+    ]
   }
 ];
 
-// Mock price data
-const mockPrices = {
-  'RELIANCE': {
-    last_price: 2456.75,
-    change: 12.50,
-    change_percent: 0.51,
-    volume: 1234567,
-    timestamp: new Date().toISOString()
-  },
-  'INFY': {
-    last_price: 1789.30,
-    change: -8.25,
-    change_percent: -0.46,
-    volume: 987654,
-    timestamp: new Date().toISOString()
-  },
-  'TCS': {
-    last_price: 3987.65,
-    change: 45.30,
-    change_percent: 1.15,
-    volume: 654321,
-    timestamp: new Date().toISOString()
-  },
-  'NIFTY': {
-    last_price: 25847.75,
-    change: 125.40,
-    change_percent: 0.49,
-    volume: 2345678,
-    timestamp: new Date().toISOString()
-  },
-  'BANKNIFTY': {
-    last_price: 53456.80,
-    change: -235.60,
-    change_percent: -0.44,
-    volume: 3456789,
-    timestamp: new Date().toISOString()
-  }
-};
-
-// Generate mock price for any symbol
-const getMockPrice = (symbol) => {
-  if (mockPrices[symbol]) {
-    // Add small random variation to simulate live prices
-    const basePrice = mockPrices[symbol];
-    const variation = (Math.random() - 0.5) * 10; // ±5 points variation
-    return {
-      last_price: basePrice.last_price + variation,
-      change: basePrice.change + (variation * 0.1),
-      change_percent: ((basePrice.change + (variation * 0.1)) / basePrice.last_price) * 100,
-      volume: basePrice.volume + Math.floor(Math.random() * 10000),
-      timestamp: new Date().toISOString()
-    };
-  }
-  
-  // Generate random price for unknown symbols
-  const basePrice = 1000 + Math.random() * 2000;
-  const change = (Math.random() - 0.5) * 50;
-  return {
-    last_price: basePrice,
-    change: change,
-    change_percent: (change / basePrice) * 100,
-    volume: Math.floor(Math.random() * 1000000),
-    timestamp: new Date().toISOString()
-  };
-};
-
-// Market hours check (9:15 AM to 3:30 PM IST, Monday-Friday)
-const isMarketOpen = () => {
-  const now = new Date();
-  const istTime = new Date(now.getTime() + (5.5 * 60 * 60 * 1000)); // Convert to IST
-  const day = istTime.getDay(); // 0 = Sunday, 6 = Saturday
-  const hour = istTime.getHours();
-  const minute = istTime.getMinutes();
-  
-  // Check if it's a weekday (Monday-Friday)
-  if (day === 0 || day === 6) return false;
-  
-  // Check if it's within market hours (9:15 AM to 3:30 PM)
-  const currentTime = hour * 60 + minute;
-  const marketOpen = 9 * 60 + 15; // 9:15 AM
-  const marketClose = 15 * 60 + 30; // 3:30 PM
-  
-  return currentTime >= marketOpen && currentTime <= marketClose;
-};
-
-// Get market status
-const getMarketStatus = async (req, res) => {
+/**
+ * Initialize Zerodha service
+ */
+const initializeZerodha = async (req, res) => {
   try {
-    const isOpen = isMarketOpen();
+    console.log('🚀 Initializing Zerodha service...');
+    
+    // Force bootstrap of Zerodha service
+    await zerodhaServiceInstance.bootstrap();
+    
+    // Get market status to verify connection
+    const marketStatus = zerodhaServiceInstance.getMarketStatus();
     
     res.json({
-      isOpen,
-      connectionType: 'Mock Prices',
-      wsConnected: false,
-      subscribedTokens: [],
-      accessToken: false,
-      apiKey: 'mock-service'
+      success: true,
+      message: 'Zerodha service initialized successfully',
+      data: {
+        marketStatus,
+        timestamp: new Date().toISOString()
+      }
     });
+    
+  } catch (error) {
+    console.error('❌ Error initializing Zerodha service:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to initialize Zerodha service',
+      error: error.message,
+      details: error.stack
+    });
+  }
+};
+
+/**
+ * Get market status
+ */
+const getMarketStatus = async (req, res) => {
+  try {
+    const marketStatus = zerodhaServiceInstance.getMarketStatus();
+    
+    // Try to get profile if bootstrapped
+    let profile = null;
+    if (marketStatus.isBootstrapped && marketStatus.accessToken) {
+      try {
+        profile = await zerodhaServiceInstance.getProfile();
+      } catch (profileError) {
+        console.log('Profile fetch failed:', profileError.message);
+      }
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        ...marketStatus,
+        profile,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
   } catch (error) {
     console.error('Error getting market status:', error);
-    res.status(500).json({ error: 'Failed to get market status' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get market status',
+      error: error.message
+    });
   }
 };
 
-// Get all watchlists for the user
+/**
+ * Get all watchlists
+ */
 const getWatchlists = async (req, res) => {
   try {
-    res.json(watchlists);
-  } catch (error) {
-    console.error('Error fetching watchlists:', error);
-    res.status(500).json({ error: 'Failed to fetch watchlists' });
-  }
-};
-
-// Get a specific watchlist with live prices
-const getWatchlist = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const watchlist = watchlists.find(w => w.id === id);
+    // Add live prices to all instruments in all watchlists
+    const watchlistsWithPrices = await Promise.all(
+      watchlists.map(async (watchlist) => {
+        const instrumentsWithPrices = await getInstrumentsWithPrices(watchlist.instruments);
+        return {
+          ...watchlist,
+          instruments: instrumentsWithPrices
+        };
+      })
+    );
     
-    if (!watchlist) {
-      return res.status(404).json({ error: 'Watchlist not found' });
-    }
-
-    console.log('Found watchlist:', id, 'with', watchlist.instruments.length, 'instruments');
-
-    // Always attach live prices to instruments, even if empty
-    watchlist.instruments = watchlist.instruments.map(instrument => {
-      const symbol = instrument.symbol || instrument.tradingsymbol || instrument.instrument_token || 'UNKNOWN';
-      const priceData = getMockPrice(symbol);
-      
-      console.log(`Generating mock price for ${symbol}:`, priceData);
-      
-      const instrumentWithPrice = {
-        ...instrument,
-        livePrice: {
-          price: Math.round(priceData.last_price * 100) / 100,
-          change: Math.round(priceData.change * 100) / 100,
-          changePercent: Math.round(priceData.change_percent * 100) / 100,
-          volume: priceData.volume,
-          timestamp: priceData.timestamp
-        }
-      };
-      
-      console.log('Instrument with price:', JSON.stringify(instrumentWithPrice, null, 2));
-      return instrumentWithPrice;
+    res.json({
+      success: true,
+      data: watchlistsWithPrices,
+      timestamp: new Date().toISOString()
     });
-
-    console.log('Final watchlist response:', JSON.stringify(watchlist, null, 2));
-    res.json(watchlist);
+    
   } catch (error) {
-    console.error('Error fetching watchlist:', error);
-    res.status(500).json({ error: 'Failed to fetch watchlist' });
+    console.error('Error getting watchlists:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get watchlists',
+      error: error.message
+    });
   }
 };
 
-// Create a new watchlist
-const createWatchlist = async (req, res) => {
+/**
+ * Create a new watchlist
+ */
+const createWatchlist = (req, res) => {
   try {
     const { name } = req.body;
     
     if (!name) {
-      return res.status(400).json({ error: 'Watchlist name is required' });
+      return res.status(400).json({
+        success: false,
+        message: 'Watchlist name is required'
+      });
     }
-
+    
     const newWatchlist = {
       id: `watchlist-${Date.now()}`,
       name,
-      instruments: [],
-      createdAt: new Date()
+      instruments: []
     };
-
+    
     watchlists.push(newWatchlist);
-    res.status(201).json(newWatchlist);
+    
+    res.json({
+      success: true,
+      message: 'Watchlist created successfully',
+      data: newWatchlist
+    });
+    
   } catch (error) {
     console.error('Error creating watchlist:', error);
-    res.status(500).json({ error: 'Failed to create watchlist' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create watchlist',
+      error: error.message
+    });
   }
 };
 
-// Delete a watchlist
-const deleteWatchlist = async (req, res) => {
+/**
+ * Get a specific watchlist with live prices
+ */
+const getWatchlist = async (req, res) => {
   try {
     const { id } = req.params;
-    const index = watchlists.findIndex(w => w.id === id);
     
-    if (index === -1) {
-      return res.status(404).json({ error: 'Watchlist not found' });
+    const watchlist = watchlists.find(w => w.id === id);
+    if (!watchlist) {
+      return res.status(404).json({
+        success: false,
+        message: 'Watchlist not found'
+      });
     }
+    
+    // Add live prices to instruments
+    const instrumentsWithPrices = await getInstrumentsWithPrices(watchlist.instruments);
+    
+    res.json({
+      success: true,
+      data: {
+        ...watchlist,
+        instruments: instrumentsWithPrices
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('Error getting watchlist:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get watchlist',
+      error: error.message
+    });
+  }
+};
 
-    watchlists.splice(index, 1);
-    res.json({ message: 'Watchlist deleted successfully' });
+/**
+ * Helper function to get instruments with live prices
+ */
+const getInstrumentsWithPrices = async (instruments) => {
+  if (!instruments || instruments.length === 0) {
+    return [];
+  }
+  
+  try {
+    // Extract instrument tokens
+    const tokens = instruments
+      .map(inst => inst.instrument_token)
+      .filter(token => token && !isNaN(parseInt(token)));
+    
+    if (tokens.length === 0) {
+      // Return instruments with mock prices if no valid tokens
+      return instruments.map(instrument => ({
+        ...instrument,
+        livePrice: mockPriceService.getPrice(instrument.tradingsymbol || instrument.symbol)
+      }));
+    }
+    
+    // Try to get live prices from Zerodha
+    let livePrices = {};
+    try {
+      if (zerodhaServiceInstance.getMarketStatus().isBootstrapped) {
+        livePrices = await zerodhaServiceInstance.getCurrentPrice(tokens);
+      }
+    } catch (priceError) {
+      console.log('Live price fetch failed, using mock prices:', priceError.message);
+    }
+    
+    // Combine instruments with prices
+    return instruments.map(instrument => {
+      const token = instrument.instrument_token;
+      let livePrice = null;
+      
+      // Try to get live price from Zerodha first
+      if (livePrices[token]) {
+        livePrice = {
+          last_price: livePrices[token].last_price,
+          change: livePrices[token].change,
+          change_percent: livePrices[token].change_percent,
+          volume: livePrices[token].volume,
+          timestamp: livePrices[token].timestamp,
+          source: 'zerodha'
+        };
+      } else {
+        // Fallback to mock price
+        const mockPrice = mockPriceService.getPrice(instrument.tradingsymbol || instrument.symbol);
+        livePrice = {
+          ...mockPrice,
+          source: 'mock'
+        };
+      }
+      
+      return {
+        ...instrument,
+        livePrice
+      };
+    });
+    
+  } catch (error) {
+    console.error('Error getting instruments with prices:', error);
+    
+    // Fallback to mock prices
+    return instruments.map(instrument => ({
+      ...instrument,
+      livePrice: {
+        ...mockPriceService.getPrice(instrument.tradingsymbol || instrument.symbol),
+        source: 'mock'
+      }
+    }));
+  }
+};
+
+/**
+ * Add instrument to watchlist
+ */
+const addInstrumentToWatchlist = (req, res) => {
+  try {
+    const { id } = req.params;
+    const instrument = req.body;
+    
+    const watchlist = watchlists.find(w => w.id === id);
+    if (!watchlist) {
+      return res.status(404).json({
+        success: false,
+        message: 'Watchlist not found'
+      });
+    }
+    
+    // Validate instrument data
+    if (!instrument.instrument_token || !instrument.tradingsymbol) {
+      return res.status(400).json({
+        success: false,
+        message: 'Instrument token and trading symbol are required'
+      });
+    }
+    
+    // Check if instrument already exists
+    const exists = watchlist.instruments.some(
+      i => i.instrument_token === instrument.instrument_token
+    );
+    
+    if (exists) {
+      return res.status(400).json({
+        success: false,
+        message: 'Instrument already exists in watchlist'
+      });
+    }
+    
+    watchlist.instruments.push(instrument);
+    
+    res.json({
+      success: true,
+      message: 'Instrument added to watchlist successfully',
+      data: watchlist
+    });
+    
+  } catch (error) {
+    console.error('Error adding instrument to watchlist:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add instrument to watchlist',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Remove instrument from watchlist
+ */
+const removeInstrumentFromWatchlist = (req, res) => {
+  try {
+    const { id, instrumentToken } = req.params;
+    
+    const watchlist = watchlists.find(w => w.id === id);
+    if (!watchlist) {
+      return res.status(404).json({
+        success: false,
+        message: 'Watchlist not found'
+      });
+    }
+    
+    const initialLength = watchlist.instruments.length;
+    watchlist.instruments = watchlist.instruments.filter(
+      i => i.instrument_token !== parseInt(instrumentToken)
+    );
+    
+    if (watchlist.instruments.length === initialLength) {
+      return res.status(404).json({
+        success: false,
+        message: 'Instrument not found in watchlist'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Instrument removed from watchlist successfully',
+      data: watchlist
+    });
+    
+  } catch (error) {
+    console.error('Error removing instrument from watchlist:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove instrument from watchlist',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Delete watchlist
+ */
+const deleteWatchlist = (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const initialLength = watchlists.length;
+    watchlists = watchlists.filter(w => w.id !== id);
+    
+    if (watchlists.length === initialLength) {
+      return res.status(404).json({
+        success: false,
+        message: 'Watchlist not found'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Watchlist deleted successfully'
+    });
+    
   } catch (error) {
     console.error('Error deleting watchlist:', error);
-    res.status(500).json({ error: 'Failed to delete watchlist' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete watchlist',
+      error: error.message
+    });
   }
 };
 
-// Add instrument to watchlist
-const addInstrument = async (req, res) => {
+/**
+ * Refresh Zerodha token
+ */
+const refreshZerodhaToken = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { instrument } = req.body;
+    console.log('🔄 Refreshing Zerodha token...');
     
-    console.log('Adding instrument to watchlist:', id, instrument);
+    await zerodhaServiceInstance.refreshToken();
     
-    if (!instrument) {
-      return res.status(400).json({ error: 'Instrument data is required' });
-    }
-
-    const watchlist = watchlists.find(w => w.id === id);
-    if (!watchlist) {
-      return res.status(404).json({ error: 'Watchlist not found' });
-    }
-
-    // Check if instrument already exists
-    const exists = watchlist.instruments.some(inst => 
-      inst._id === instrument._id || 
-      inst.instrument_token === instrument.instrument_token
-    );
-
-    if (exists) {
-      return res.status(400).json({ error: 'Instrument already in watchlist' });
-    }
-
-    // Add instrument with timestamp
-    const instrumentWithMeta = {
-      ...instrument,
-      addedAt: new Date()
-    };
-
-    watchlist.instruments.push(instrumentWithMeta);
-    console.log('Instrument added successfully. Watchlist now has:', watchlist.instruments.length, 'instruments');
-
-    res.json(watchlist);
+    const marketStatus = zerodhaServiceInstance.getMarketStatus();
+    
+    res.json({
+      success: true,
+      message: 'Zerodha token refreshed successfully',
+      data: {
+        marketStatus,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
   } catch (error) {
-    console.error('Error adding instrument:', error);
-    res.status(500).json({ error: 'Failed to add instrument' });
+    console.error('❌ Error refreshing Zerodha token:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to refresh Zerodha token',
+      error: error.message
+    });
   }
 };
 
-// Remove instrument from watchlist
-const removeInstrument = async (req, res) => {
+/**
+ * Get live prices for specific instruments
+ */
+const getLivePrices = async (req, res) => {
   try {
-    const { id, instrumentId } = req.params;
+    const { tokens } = req.body;
     
-    const watchlist = watchlists.find(w => w.id === id);
-    if (!watchlist) {
-      return res.status(404).json({ error: 'Watchlist not found' });
+    if (!tokens || !Array.isArray(tokens) || tokens.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Instrument tokens array is required'
+      });
     }
-
-    const instrumentIndex = watchlist.instruments.findIndex(inst => 
-      inst._id === instrumentId || inst.instrument_token === instrumentId
-    );
-
-    if (instrumentIndex === -1) {
-      return res.status(404).json({ error: 'Instrument not found in watchlist' });
+    
+    const validTokens = tokens
+      .map(token => parseInt(token))
+      .filter(token => !isNaN(token) && token > 0);
+    
+    if (validTokens.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid instrument tokens provided'
+      });
     }
-
-    // Remove instrument
-    watchlist.instruments.splice(instrumentIndex, 1);
-
-    res.json(watchlist);
+    
+    let prices = {};
+    
+    try {
+      if (zerodhaServiceInstance.getMarketStatus().isBootstrapped) {
+        prices = await zerodhaServiceInstance.getCurrentPrice(validTokens);
+      }
+    } catch (priceError) {
+      console.log('Live price fetch failed:', priceError.message);
+    }
+    
+    res.json({
+      success: true,
+      data: prices,
+      timestamp: new Date().toISOString()
+    });
+    
   } catch (error) {
-    console.error('Error removing instrument:', error);
-    res.status(500).json({ error: 'Failed to remove instrument' });
+    console.error('Error getting live prices:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get live prices',
+      error: error.message
+    });
   }
 };
 
-// Dummy functions for Zerodha (not used in mock mode)
-const initializeZerodha = async (req, res) => {
-  res.json({ message: 'Mock mode - Zerodha not needed', connected: true });
-};
-
-const getZerodhaLoginUrl = async (req, res) => {
-  res.json({ loginUrl: 'https://example.com/mock-login' });
-};
-
-const generateAccessToken = async (req, res) => {
-  res.json({ accessToken: 'mock-token' });
-};
-
+// Export all functions
 module.exports = {
+  initializeZerodha,
   getMarketStatus,
   getWatchlists,
-  getWatchlist,
   createWatchlist,
+  getWatchlist,
+  addInstrumentToWatchlist,
+  removeInstrumentFromWatchlist,
   deleteWatchlist,
-  addInstrument,
-  removeInstrument,
-  initializeZerodha,
-  getZerodhaLoginUrl,
-  generateAccessToken
+  refreshZerodhaToken,
+  getLivePrices
 };

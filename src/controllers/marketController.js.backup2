@@ -1,0 +1,372 @@
+const Instrument = require('../models/Instrument');
+const fs = require('fs');
+const { parse } = require('csv-parse');
+
+// Get all instruments with pagination and search
+exports.getInstruments = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = Math.min(parseInt(req.query.limit) || 100, 1000);
+    const skip = (page - 1) * limit;
+    const search = req.query.search;
+
+    let query = {};
+    let sort = { createdAt: -1 };
+
+    if (search) {
+      // Advanced multi-keyword search
+      const keywords = search.trim().split(/\s+/);
+      const searchConditions = keywords.map(keyword => ({
+        $or: [
+          { tradingsymbol: { $regex: keyword, $options: 'i' } },
+          { symbol: { $regex: keyword, $options: 'i' } },
+          { name: { $regex: keyword, $options: 'i' } },
+          { instrument_token: { $regex: keyword, $options: 'i' } },
+          { exchange_token: { $regex: keyword, $options: 'i' } },
+          { isin: { $regex: keyword, $options: 'i' } }
+        ]
+      }));
+
+      // All keywords must match (AND logic)
+      query = { $and: searchConditions };
+
+      // Add relevance scoring for search results
+      const pipeline = [
+        { $match: query },
+        {
+          $addFields: {
+            relevanceScore: {
+              $sum: keywords.map(keyword => ({
+                $sum: [
+                  // Exact matches get highest score
+                  { $cond: [{ $eq: ['$tradingsymbol', keyword.toUpperCase()] }, 100, 0] },
+                  { $cond: [{ $eq: ['$symbol', keyword.toUpperCase()] }, 100, 0] },
+                  
+                  // Starts with matches get high score
+                  { $cond: [{ $regexMatch: { input: '$tradingsymbol', regex: `^${keyword}`, options: 'i' } }, 50, 0] },
+                  { $cond: [{ $regexMatch: { input: '$symbol', regex: `^${keyword}`, options: 'i' } }, 50, 0] },
+                  { $cond: [{ $regexMatch: { input: '$name', regex: `^${keyword}`, options: 'i' } }, 50, 0] },
+                  
+                  // Contains matches get medium score
+                  { $cond: [{ $regexMatch: { input: '$tradingsymbol', regex: keyword, options: 'i' } }, 25, 0] },
+                  { $cond: [{ $regexMatch: { input: '$symbol', regex: keyword, options: 'i' } }, 25, 0] },
+                  { $cond: [{ $regexMatch: { input: '$name', regex: keyword, options: 'i' } }, 25, 0] },
+                  
+                  // Each keyword match adds points
+                  10
+                ]
+              }))
+            }
+          }
+        },
+        { $sort: { relevanceScore: -1, createdAt: -1 } },
+        { $skip: skip },
+        { $limit: limit }
+      ];
+
+      const instruments = await Instrument.aggregate(pipeline);
+      const total = await Instrument.countDocuments(query);
+
+      return res.json({
+        success: true,
+        data: {
+          instruments,
+          pagination: {
+            page,
+            limit,
+            total,
+            pages: Math.ceil(total / limit)
+          }
+        }
+      });
+    }
+
+    // Regular query without search
+    const instruments = await Instrument.find(query)
+      .sort(sort)
+      .skip(skip)
+      .limit(limit)
+      .lean();
+
+    const total = await Instrument.countDocuments(query);
+
+    res.json({
+      success: true,
+      data: {
+        instruments,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Get instrument statistics
+exports.getInstrumentStats = async (req, res, next) => {
+  try {
+    const totalCount = await Instrument.countDocuments();
+    
+    const exchangeStats = await Instrument.aggregate([
+      { $group: { _id: '$exchange', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    const typeStats = await Instrument.aggregate([
+      { $group: { _id: '$instrument_type', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    const segmentStats = await Instrument.aggregate([
+      { $group: { _id: '$segment', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        total: totalCount,
+        exchanges: exchangeStats.reduce((acc, item) => {
+          acc[item._id || 'Unknown'] = item.count;
+          return acc;
+        }, {}),
+        instrumentTypes: typeStats.reduce((acc, item) => {
+          acc[item._id || 'Unknown'] = item.count;
+          return acc;
+        }, {}),
+        segments: segmentStats.reduce((acc, item) => {
+          acc[item._id || 'Unknown'] = item.count;
+          return acc;
+        }, {})
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Import instruments from CSV
+exports.importInstruments = async (req, res, next) => {
+  if (!req.file) {
+    return res.status(400).json({ 
+      success: false, 
+      message: "CSV file is required" 
+    });
+  }
+
+  const filePath = req.file.path;
+  const instruments = [];
+  let processedCount = 0;
+  let errorCount = 0;
+
+  try {
+    const parser = fs
+      .createReadStream(filePath)
+      .pipe(
+        parse({
+          columns: true,
+          skip_empty_lines: true,
+          trim: true,
+        })
+      );
+
+    parser.on("data", (row) => {
+      try {
+        // Handle both old and new CSV formats
+        const instrument = {
+          // Primary identifiers
+          instrument_token: row.instrument_token || row.token || `${Date.now()}-${processedCount}`,
+          exchange_token: row.exchange_token || row.exchange_token,
+          tradingsymbol: row.tradingsymbol || row.symbol || row.trading_symbol,
+          
+          // Basic info
+          name: row.name || row.description || row.company_name || row.tradingsymbol,
+          symbol: (row.symbol || row.tradingsymbol || "").toUpperCase(),
+          
+          // Exchange and classification
+          exchange: row.exchange || row.exch || 'NSE',
+          segment: row.segment || row.seg,
+          instrument_type: row.instrument_type || row.instrumentType || row.type || 'EQ',
+          
+          // Price and trading info
+          last_price: parseFloat(row.last_price || row.lastPrice || row.price || 0),
+          tick_size: parseFloat(row.tick_size || row.tickSize || 0.05),
+          lot_size: parseInt(row.lot_size || row.lotSize || 1),
+          
+          // Options/Futures specific
+          expiry: row.expiry ? new Date(row.expiry) : null,
+          strike: parseFloat(row.strike || 0) || null,
+          
+          // Additional identifiers
+          isin: row.isin || row.ISIN,
+          
+          // Legacy fields for backward compatibility
+          instrumentType: row.instrument_type || row.instrumentType || row.type,
+          lotSize: parseInt(row.lot_size || row.lotSize || 1),
+          tickSize: parseFloat(row.tick_size || row.tickSize || 0.05),
+          lastPrice: parseFloat(row.last_price || row.lastPrice || row.price || 0),
+          dailyChange: 0
+        };
+
+        // Validate required fields
+        if (!instrument.tradingsymbol || !instrument.instrument_token) {
+          console.warn('Skipping invalid instrument:', row);
+          errorCount++;
+          return;
+        }
+
+        instruments.push(instrument);
+        processedCount++;
+      } catch (error) {
+        console.error('Error processing row:', error, row);
+        errorCount++;
+      }
+    });
+
+    parser.on("end", async () => {
+      try {
+        console.log(`Processing ${instruments.length} instruments...`);
+        
+        // Use bulkWrite for better performance
+        const bulkOps = instruments.map((inst) => ({
+          updateOne: {
+            filter: {
+              $or: [
+                { instrument_token: inst.instrument_token },
+                { tradingsymbol: inst.tradingsymbol, exchange: inst.exchange }
+              ]
+            },
+            update: { $set: inst },
+            upsert: true,
+          },
+        }));
+
+        if (bulkOps.length > 0) {
+          const result = await Instrument.bulkWrite(bulkOps, { ordered: false });
+          console.log('Bulk write result:', result);
+          
+          res.json({ 
+            success: true,
+            message: `Successfully imported ${bulkOps.length} instruments`,
+            data: {
+              imported: result.upsertedCount + result.modifiedCount,
+              upserted: result.upsertedCount,
+              modified: result.modifiedCount,
+              errors: errorCount
+            }
+          });
+        } else {
+          res.status(400).json({
+            success: false,
+            message: "No valid instruments found in CSV file",
+            data: { errors: errorCount }
+          });
+        }
+
+        // Clean up uploaded file
+        fs.unlinkSync(filePath);
+      } catch (error) {
+        console.error('Bulk write error:', error);
+        res.status(500).json({
+          success: false,
+          message: `Import failed: ${error.message}`,
+          data: { errors: errorCount }
+        });
+      }
+    });
+
+    parser.on("error", (error) => {
+      console.error('CSV parsing error:', error);
+      res.status(500).json({
+        success: false,
+        message: `CSV parsing failed: ${error.message}`
+      });
+    });
+
+  } catch (error) {
+    console.error('Import error:', error);
+    res.status(500).json({
+      success: false,
+      message: `Import failed: ${error.message}`
+    });
+  }
+};
+
+/**
+ * Search instruments with autocomplete
+ */
+exports.searchInstruments = async (req, res, next) => {
+  try {
+    const { q = "", limit = 10 } = req.query;
+    
+    if (!q || q.trim().length < 2) {
+      return res.json({
+        success: true,
+        data: []
+      });
+    }
+
+    const searchRegex = new RegExp(q.trim(), "i");
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+
+    const instruments = await Instrument.find({
+      $or: [
+        { tradingsymbol: searchRegex },
+        { name: searchRegex },
+        { symbol: searchRegex }
+      ]
+    })
+    .select("instrument_token tradingsymbol name exchange instrument_type last_price")
+    .limit(limitNum)
+    .lean();
+
+    res.json({
+      success: true,
+      data: instruments
+    });
+
+  } catch (error) {
+    console.error("Error searching instruments:", error);
+    next(error);
+  }
+};
+
+/**
+ * Get a specific instrument by ID or token
+ */
+exports.getInstrument = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    
+    // Try to find by instrument_token first, then by MongoDB _id
+    let instrument;
+    if (!isNaN(id)) {
+      instrument = await Instrument.findOne({ instrument_token: parseInt(id) });
+    }
+    
+    if (!instrument) {
+      instrument = await Instrument.findById(id);
+    }
+
+    if (!instrument) {
+      return res.status(404).json({
+        success: false,
+        message: "Instrument not found"
+      });
+    }
+
+    res.json({
+      success: true,
+      data: instrument
+    });
+
+  } catch (error) {
+    console.error("Error fetching instrument:", error);
+    next(error);
+  }
+};

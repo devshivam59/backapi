@@ -1,19 +1,19 @@
 const mongoose = require('mongoose');
 
+// Create a very flexible schema that accepts any fields
 const instrumentSchema = new mongoose.Schema(
-  {
-    symbol: { type: String, required: true, unique: true, uppercase: true },
-    name: { type: String, required: true },
-    exchange: { type: String },
-    segment: { type: String },
-    instrumentType: { type: String },
-    lotSize: { type: Number, default: 1 },
-    tickSize: { type: Number, default: 0.05 },
-    isin: { type: String },
-    lastPrice: { type: Number, default: 0 },
-    dailyChange: { type: Number, default: 0 },
-  },
-  { timestamps: true }
+  {},  // Empty schema definition - allows any fields
+  { 
+    timestamps: true,
+    strict: false,  // Allow any additional fields
+    collection: 'instruments'  // Explicit collection name
+  }
 );
+
+// Add some basic indexes for performance
+instrumentSchema.index({ instrument_token: 1 }, { unique: true, sparse: true });
+instrumentSchema.index({ tradingsymbol: 1, exchange: 1 }, { sparse: true });
+instrumentSchema.index({ symbol: 1 }, { sparse: true });
+instrumentSchema.index({ name: 'text', tradingsymbol: 'text', symbol: 'text' });
 
 module.exports = mongoose.model('Instrument', instrumentSchema);
