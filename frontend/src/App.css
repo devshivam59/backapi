@@ -234,18 +234,6 @@
   outline: none;
 }
 
-.chip--active {
-  background: linear-gradient(120deg, rgba(59, 130, 246, 0.32) 0%, rgba(14, 165, 233, 0.28) 100%);
-  color: #f8fafc;
-  border: 1px solid rgba(96, 165, 250, 0.55);
-  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
-}
-
-.chip--active:hover,
-.chip--active:focus-visible {
-  background: linear-gradient(120deg, rgba(59, 130, 246, 0.42) 0%, rgba(14, 165, 233, 0.38) 100%);
-}
-
 .chip--primary {
   background: linear-gradient(90deg, rgba(56, 189, 248, 0.2) 0%, rgba(129, 140, 248, 0.35) 100%);
   color: #e0f2fe;
@@ -329,24 +317,6 @@
   border-color: rgba(248, 113, 113, 0.35);
 }
 
-.live-indicator--pending {
-  background: rgba(59, 130, 246, 0.14);
-  color: #93c5fd;
-  border-color: rgba(96, 165, 250, 0.35);
-}
-
-.live-indicator--degraded {
-  background: rgba(251, 191, 36, 0.12);
-  color: #fbbf24;
-  border-color: rgba(251, 191, 36, 0.28);
-}
-
-.live-indicator--idle {
-  background: rgba(148, 163, 184, 0.16);
-  color: #cbd5f5;
-  border-color: rgba(148, 163, 184, 0.28);
-}
-
 .live-indicator--active {
   animation: pulseGlow 2.6s ease-in-out infinite;
 }
@@ -359,59 +329,6 @@
   50% {
     box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
   }
-}
-
-.alert {
-  margin-top: 16px;
-  padding: 14px 18px;
-  border-radius: 18px;
-  border: 1px solid transparent;
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  background: rgba(30, 41, 59, 0.85);
-  color: #e2e8f0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-}
-
-.alert svg {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.alert p {
-  margin: 2px 0 0;
-  color: rgba(226, 232, 240, 0.72);
-}
-
-.alert--error {
-  border-color: rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.1);
-  color: #fecaca;
-}
-
-.alert--error p {
-  color: rgba(254, 226, 226, 0.75);
-}
-
-.watchlist-empty {
-  margin-top: 24px;
-  padding: 36px 24px;
-  border-radius: 24px;
-  text-align: center;
-  border: 1px dashed rgba(148, 163, 184, 0.3);
-  background: linear-gradient(145deg, rgba(15, 23, 42, 0.8) 0%, rgba(30, 41, 59, 0.88) 100%);
-  color: rgba(226, 232, 240, 0.72);
-  display: grid;
-  gap: 8px;
-  justify-items: center;
-}
-
-.watchlist-empty strong {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #f1f5f9;
 }
 
 .watchlist-grid {

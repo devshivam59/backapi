@@ -2,20 +2,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 const DEFAULT_REFRESH_INTERVAL = 5000;
 const ZERODHA_LTP_URL = 'https://api.kite.trade/quote/ltp';
-const MAX_JITTER_PERCENT = 0.35;
 
 const serializeInstruments = (instruments = []) => instruments.slice().sort().join('|');
 
-export function useLivePrices(
-  instruments,
-  { token, refreshInterval = DEFAULT_REFRESH_INTERVAL, simulateOnError = false } = {},
-) {
+export function useLivePrices(instruments, { token, refreshInterval = DEFAULT_REFRESH_INTERVAL } = {}) {
   const [prices, setPrices] = useState({});
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
   const instrumentsKey = useMemo(() => serializeInstruments(instruments), [instruments]);
   const abortRef = useRef();
-  const lastSuccessfulRef = useRef({});
 
   useEffect(() => {
     if (!instruments?.length) {
@@ -75,43 +70,13 @@ export function useLivePrices(
         setPrices(nextPrices);
         setStatus('success');
         setError(null);
-        lastSuccessfulRef.current = nextPrices;
       } catch (fetchError) {
         if (!mounted || controller.signal.aborted) {
           return;
         }
         console.warn('[useLivePrices] Falling back to cached data:', fetchError);
         setError(fetchError);
-
-        if (simulateOnError) {
-          setPrices((previousPrices) => {
-            const source = Object.keys(previousPrices).length
-              ? previousPrices
-              : lastSuccessfulRef.current;
-
-            if (!source || Object.keys(source).length === 0) {
-              return previousPrices;
-            }
-
-            const simulated = {};
-            Object.entries(source).forEach(([instrumentKey, lastPrice]) => {
-              const numericPrice = Number(lastPrice);
-              if (Number.isNaN(numericPrice)) {
-                simulated[instrumentKey] = lastPrice;
-                return;
-              }
-              const direction = Math.random() > 0.5 ? 1 : -1;
-              const jitterPercent = Math.random() * MAX_JITTER_PERCENT;
-              const delta = numericPrice * (jitterPercent / 100) * direction;
-              const nextPrice = Math.max(numericPrice + delta, 0);
-              simulated[instrumentKey] = Number(nextPrice.toFixed(2));
-            });
-            return simulated;
-          });
-          setStatus('degraded');
-        } else {
-          setStatus('error');
-        }
+        setStatus('error');
       }
     };
 
