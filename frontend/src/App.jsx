@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   IconBell,
+  IconBuildingSkyscraper,
   IconList,
   IconMenu2,
   IconStack2,
@@ -11,6 +12,7 @@ import WatchlistTab from './components/WatchlistTab.jsx';
 import OrdersTab from './components/OrdersTab.jsx';
 import PortfolioTab from './components/PortfolioTab.jsx';
 import ProfileTab from './components/ProfileTab.jsx';
+import AdminDashboard from './components/AdminDashboard.jsx';
 import './App.css';
 
 const tabs = [
@@ -34,6 +36,11 @@ const tabs = [
     label: 'Profile',
     icon: IconUser,
   },
+  {
+    key: 'admin',
+    label: 'Admin',
+    icon: IconBuildingSkyscraper,
+  },
 ];
 
 const tabComponents = {
@@ -41,6 +48,7 @@ const tabComponents = {
   orders: OrdersTab,
   portfolio: PortfolioTab,
   profile: ProfileTab,
+  admin: AdminDashboard,
 };
 
 export default function App() {

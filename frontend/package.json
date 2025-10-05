@@ -10,6 +10,10 @@
   },
   "dependencies": {
     "@tabler/icons-react": "^2.47.0",
+ codex/create-modern-trading-app-frontend-u98mzh
+    "fuse.js": "^6.6.2",
+
+ main
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
