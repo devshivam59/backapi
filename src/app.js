@@ -21,7 +21,7 @@ app.get('/', (_req, res) => {
   res.json({ message: 'Trading API is running', version: 'v1' });
 });
 
-app.use('/', routes);
+app.use('/api', routes);
 app.use(notFound);
 app.use(errorHandler);
 

@@ -1,24 +1,25 @@
 const express = require('express');
 const asyncHandler = require('../../utils/asyncHandler');
 const { authenticate } = require('../../middleware/auth');
-const { getState } = require('../../store/dataStore');
-const { ensureSnapshot } = require('../../services/marketDataService');
+const Holding = require('../../models/Holding');
+const Position = require('../../models/Position');
+const Trade = require('../../models/Trade');
+const { getInstrument, ensureSnapshot } = require('../../services/marketDataService');
 
 const router = express.Router();
 
 router.get(
   '/holdings',
   authenticate(true),
-  asyncHandler((req, res) => {
-    const { holdings } = getState();
-    const own = holdings.filter((holding) => holding.user_id === req.user.id);
-    const enriched = own.map((holding) => {
-      const snapshot = ensureSnapshot(holding.instrument_id);
+  asyncHandler(async (req, res) => {
+    const holdings = await Holding.find({ user: req.user._id }).populate('instrument');
+    const enriched = holdings.map((holding) => {
+      const snapshot = ensureSnapshot(holding.instrument.id);
       const lastPrice = snapshot.ltp;
-      const pnlAbs = Number(((lastPrice - holding.avg_price) * holding.qty).toFixed(2));
-      const pnlPct = holding.avg_price ? Number(((pnlAbs / (holding.avg_price * holding.qty)) * 100).toFixed(2)) : 0;
+      const pnlAbs = Number(((lastPrice - holding.averagePrice) * holding.quantity).toFixed(2));
+      const pnlPct = holding.averagePrice ? Number(((pnlAbs / (holding.averagePrice * holding.quantity)) * 100).toFixed(2)) : 0;
       return {
-        ...holding,
+        ...holding.toObject(),
         last_price: lastPrice,
         pnl_abs: pnlAbs,
         pnl_pct: pnlPct
@@ -31,14 +32,14 @@ router.get(
 router.get(
   '/positions',
   authenticate(true),
-  asyncHandler((req, res) => {
-    const { positions } = getState();
-    const own = positions.filter((position) => position.user_id === req.user.id);
-    const enriched = own.map((position) => {
-      const snapshot = ensureSnapshot(position.instrument_id);
+  asyncHandler(async (req, res) => {
+    const positions = await Position.find({ user_id: req.user._id }).populate('instrument_id');
+    const enriched = positions.map((position) => {
+      const snapshot = ensureSnapshot(position.instrument_id.id);
       const mtm = Number((snapshot.ltp * position.qty - position.avg_price * position.qty).toFixed(2));
       return {
-        ...position,
+        ...position.toObject(),
+        instrument: position.instrument_id.toObject(),
         mtm
       };
     });
@@ -47,32 +48,12 @@ router.get(
 );
 
 router.get(
-  '/pnl/daily',
-  authenticate(true),
-  asyncHandler((req, res) => {
-    const { trades } = getState();
-    const own = trades.filter((trade) => trade.user_id === req.user.id);
-    const breakdown = own.reduce((acc, trade) => {
-      const day = trade.ts.slice(0, 10);
-      if (!acc[day]) {
-        acc[day] = { date: day, realized: 0 };
-      }
-      const direction = trade.side === 'BUY' ? -1 : 1;
-      acc[day].realized += direction * trade.qty * trade.price;
-      return acc;
-    }, {});
-    res.json({ data: Object.values(breakdown) });
-  })
-);
-
-router.get(
-  '/trades',
-  authenticate(true),
-  asyncHandler((req, res) => {
-    const { trades } = getState();
-    const own = trades.filter((trade) => trade.user_id === req.user.id);
-    res.json({ data: own });
-  })
+    '/trades',
+    authenticate(true),
+    asyncHandler(async (req, res) => {
+      const trades = await Trade.find({ user_id: req.user._id }).populate('instrument_id');
+      res.json({ data: trades.map(t => t.toObject()) });
+    })
 );
 
 module.exports = router;
