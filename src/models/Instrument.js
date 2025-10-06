@@ -1,19 +1,46 @@
 const mongoose = require('mongoose');
 
-// Create a very flexible schema that accepts any fields
-const instrumentSchema = new mongoose.Schema(
-  {},  // Empty schema definition - allows any fields
-  { 
+const instrumentSchema = new mongoose.Schema({
+    name: { type: String, required: true },
+    symbol: { type: String, required: true },
+    tradingsymbol: { type: String, required: true },
+    exchange: { type: String, required: true, default: 'NSE' },
+    segment: { type: String, required: true, default: 'NSE' },
+    type: { type: String, enum: ['stock', 'future', 'option', 'index'], default: 'stock' },
+    lot_size: { type: Number, default: 1 },
+    tick_size: { type: Number, default: 0.05 },
+    expiry: { type: Date },
+    strike: { type: Number },
+    broker_tokens: { type: Map, of: String },
+    metadata: { type: mongoose.Schema.Types.Mixed },
+    lastPrice: { type: Number, default: 0 },
+    dailyChange: { type: Number, default: 0 }
+}, {
     timestamps: true,
-    strict: false,  // Allow any additional fields
-    collection: 'instruments'  // Explicit collection name
-  }
-);
+    toJSON: {
+        virtuals: true,
+        transform: (doc, ret) => {
+            delete ret._id;
+            delete ret.__v;
+        }
+    },
+    toObject: {
+        virtuals: true,
+        transform: (doc, ret) => {
+            delete ret._id;
+            delete ret.__v;
+        }
+    }
+});
 
-// Add some basic indexes for performance
-instrumentSchema.index({ instrument_token: 1 }, { unique: true, sparse: true });
-instrumentSchema.index({ tradingsymbol: 1, exchange: 1 }, { sparse: true });
-instrumentSchema.index({ symbol: 1 }, { sparse: true });
-instrumentSchema.index({ name: 'text', tradingsymbol: 'text', symbol: 'text' });
+instrumentSchema.virtual('id').get(function() {
+    return this._id.toHexString();
+});
+
+// Create a compound index for faster lookups on imports
+instrumentSchema.index({ tradingsymbol: 1, exchange: 1 }, { unique: true });
+// Create a text index for searching
+instrumentSchema.index({ name: 'text', symbol: 'text', tradingsymbol: 'text' });
+
 
 module.exports = mongoose.model('Instrument', instrumentSchema);

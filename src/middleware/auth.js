@@ -1,7 +1,6 @@
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const User = require('../models/User');
 const { HttpError } = require('../utils/httpError');
-const { getState } = require('../store/dataStore');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 const JWT_EXPIRY = '1d';
@@ -9,7 +8,7 @@ const JWT_EXPIRY = '1d';
 function issueToken(user) {
   return jwt.sign(
     {
-      sub: user.id,
+      sub: user.id, // user.id is a virtual from Mongoose model
       roles: user.roles || [],
       email: user.email
     },
@@ -18,35 +17,31 @@ function issueToken(user) {
   );
 }
 
-function hashPassword(password) {
-  const salt = bcrypt.genSaltSync(10);
-  return bcrypt.hashSync(password, salt);
-}
-
-function verifyPassword(password, hash) {
-  return bcrypt.compareSync(password, hash);
-}
-
 function authenticate(required = true) {
-  return (req, _res, next) => {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.substring(7) : null;
-
-    if (!token) {
-      if (required) {
-        throw new HttpError(401, 'UNAUTHENTICATED', 'Authentication token missing');
-      }
-      req.user = null;
-      return next();
-    }
-
+  return async (req, _res, next) => {
     try {
-      const payload = jwt.verify(token, JWT_SECRET);
-      const { users } = getState();
-      const user = users.find((item) => item.id === payload.sub);
-      if (!user) {
-        throw new HttpError(401, 'UNAUTHENTICATED', 'User no longer exists');
+      const header = req.headers.authorization || '';
+      const token = header.startsWith('Bearer ') ? header.substring(7) : null;
+
+      if (!token) {
+        if (required) {
+          throw new HttpError(401, 'UNAUTHENTICATED', 'Authentication token missing');
+        }
+        req.user = null;
+        return next();
       }
+
+      const payload = jwt.verify(token, JWT_SECRET);
+      const user = await User.findById(payload.sub);
+
+      if (!user) {
+        if (required) {
+          throw new HttpError(401, 'UNAUTHENTICATED', 'User no longer exists');
+        }
+        req.user = null;
+        return next();
+      }
+
       if (user.isBlocked) {
         throw new HttpError(403, 'ACCESS_DENIED', 'Account blocked');
       }
@@ -54,7 +49,11 @@ function authenticate(required = true) {
       next();
     } catch (error) {
       if (required) {
-        throw new HttpError(401, 'UNAUTHENTICATED', 'Invalid or expired token');
+        if (error instanceof jwt.JsonWebTokenError || error.name === 'JsonWebTokenError') {
+          throw new HttpError(401, 'UNAUTHENTICATED', 'Invalid or expired token');
+        }
+        // Re-throw other errors to be caught by the asyncHandler and passed to the global error handler
+        throw error;
       }
       req.user = null;
       next();
@@ -79,6 +78,4 @@ module.exports = {
   authenticate,
   requireRoles,
   issueToken,
-  hashPassword,
-  verifyPassword
 };

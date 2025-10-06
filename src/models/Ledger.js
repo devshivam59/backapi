@@ -1,10 +1,12 @@
 const mongoose = require('mongoose');
 
-const transactionSchema = new mongoose.Schema({
+const ledgerSchema = new mongoose.Schema({
     user_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-    type: { type: String, enum: ['debit', 'credit'], required: true },
-    amount: { type: Number, required: true },
     ref: { type: String },
+    type: { type: String, enum: ['DEBIT', 'CREDIT'], required: true },
+    debit: { type: Number, default: 0 },
+    credit: { type: Number, default: 0 },
+    balance: { type: Number, required: true },
     note: { type: String },
 }, {
     timestamps: true,
@@ -24,8 +26,8 @@ const transactionSchema = new mongoose.Schema({
     }
 });
 
-transactionSchema.virtual('id').get(function() {
+ledgerSchema.virtual('id').get(function() {
     return this._id.toHexString();
 });
 
-module.exports = mongoose.model('Transaction', transactionSchema);
+module.exports = mongoose.model('Ledger', ledgerSchema);

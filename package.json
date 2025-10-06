@@ -5,7 +5,8 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
+    "dev": "nodemon src/server.js",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -31,6 +32,9 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "jest": "^30.2.0",
+    "nodemon": "^3.1.0",
+    "socket.io-client": "^4.8.1",
+    "supertest": "^7.1.4"
   }
 }

@@ -1,9 +1,9 @@
 const { HttpError } = require('../utils/httpError');
-const { getState, withState } = require('../store/dataStore');
+const Instrument = require('../models/Instrument');
+const { getState, withState } = require('../store/dataStore'); // Keep for market snapshots
 
-function getInstrument(instrumentId) {
-  const { instruments } = getState();
-  const instrument = instruments.find((item) => item.id === instrumentId);
+async function getInstrument(instrumentId) {
+  const instrument = await Instrument.findById(instrumentId);
   if (!instrument) {
     throw new HttpError(404, 'NOT_FOUND', 'Instrument not found');
   }

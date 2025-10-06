@@ -1,6 +1,13 @@
 const { HttpError } = require('../utils/httpError');
-const { getState, withState, createId } = require('../store/dataStore');
 const { getInstrument, ensureSnapshot } = require('./marketDataService');
+const Order = require('../models/Order');
+const Trade = require('../models/Trade');
+const Holding = require('../models/Holding');
+const Position = require('../models/Position');
+const Transaction = require('../models/Transaction');
+const User = require('../models/User');
+const Ledger = require('../models/Ledger');
+const mongoose = require('mongoose');
 
 function parseNumber(value, field) {
   const num = Number(value);
@@ -10,13 +17,13 @@ function parseNumber(value, field) {
   return num;
 }
 
-function placeOrder(user, payload) {
+async function placeOrder(user, payload) {
   const instrumentId = payload.instrument_id;
   if (!instrumentId) {
     throw new HttpError(400, 'VALIDATION_FAILED', 'instrument_id is required');
   }
 
-  const instrument = getInstrument(instrumentId);
+  const instrument = await getInstrument(instrumentId);
   const qty = parseNumber(payload.qty, 'qty');
   const side = (payload.side || '').toUpperCase();
   if (!['BUY', 'SELL'].includes(side)) {
@@ -35,160 +42,142 @@ function placeOrder(user, payload) {
     throw new HttpError(400, 'VALIDATION_FAILED', 'price must be positive');
   }
 
-  const now = new Date().toISOString();
-  const orderId = createId('ord');
-  const shouldFill = payload.execute_immediately !== false && orderType !== 'stop';
+  const shouldFill = payload.execute_immediately !== false;
 
-  const order = {
-    id: orderId,
-    user_id: user.id,
-    instrument_id: instrument.id,
+  const order = new Order({
+    user_id: user._id,
+    instrument_id: instrument._id,
     side,
     qty,
     price: Number(price.toFixed(2)),
-    filled_qty: shouldFill ? qty : 0,
-    avg_price: shouldFill ? Number(price.toFixed(2)) : null,
-    order_type: orderType.toUpperCase(),
+    type: orderType.toUpperCase(),
     validity,
     product,
-    status: shouldFill ? 'FILLED' : 'OPEN',
-    createdAt: now,
-    updatedAt: now,
-    filledAt: shouldFill ? now : null,
-    trigger_price: payload.trigger || null,
-    disclosed_qty: payload.disclosed_qty || null
-  };
+    status: shouldFill ? 'COMPLETE' : 'OPEN',
+    filled_qty: shouldFill ? qty : 0,
+    average_price: shouldFill ? Number(price.toFixed(2)) : 0,
+    idempotency_key: payload.idempotency_key
+  });
 
   let trade = null;
   if (shouldFill) {
-    trade = {
-      id: createId('trade'),
-      order_id: orderId,
-      user_id: user.id,
-      instrument_id: instrument.id,
+    trade = new Trade({
+      order_id: order._id,
+      user_id: user._id,
+      instrument_id: instrument._id,
       side,
       qty,
-      price: order.avg_price,
-      ts: now
-    };
-    applyFillEffects(user, instrument, order, trade);
+      price: order.average_price,
+    });
   }
 
-  withState((state) => {
-    state.orders.push(order);
-    if (trade) {
-      state.trades.push(trade);
-    }
-  });
+  await executeOrderPlacement(user, instrument, order, trade);
 
-  return { order, trade };
+  return { order: order.toObject(), trade: trade ? trade.toObject() : null };
 }
 
-function applyFillEffects(user, instrument, order, trade) {
-  const gross = Number((trade.qty * trade.price).toFixed(2));
-  const direction = order.side === 'BUY' ? 1 : -1;
-  const now = new Date().toISOString();
+async function executeOrderPlacement(user, instrument, order, trade) {
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      await order.save({ session });
 
-  withState((state) => {
-    if (!state.walletAccounts[user.id]) {
-      state.walletAccounts[user.id] = {
-        balance: 0,
-        margin: 0,
-        collateral: 0,
-        updatedAt: now
-      };
-    }
-    const account = state.walletAccounts[user.id];
-    account.balance = Number((account.balance - direction * gross).toFixed(2));
-    account.updatedAt = now;
+      if (trade) {
+        await trade.save({ session });
 
-    state.walletTransactions.push({
-      id: createId('wallet_txn'),
-      user_id: user.id,
-      type: direction === 1 ? 'debit' : 'credit',
-      amount: gross,
-      ref: order.id,
-      note: 'Order fill',
-      createdAt: now
+        const gross = Number((trade.qty * trade.price).toFixed(2));
+        const direction = order.side === 'BUY' ? 1 : -1;
+
+        const updatedUser = await User.findByIdAndUpdate(
+          user._id,
+          { $inc: { fundsBalance: -direction * gross } },
+          { session, new: true }
+        );
+
+        if (updatedUser.fundsBalance < 0) {
+            throw new HttpError(400, 'INSUFFICIENT_FUNDS', 'Insufficient funds to place order');
+        }
+
+        await Transaction.create([{
+          user_id: user._id,
+          type: direction === 1 ? 'debit' : 'credit',
+          amount: gross,
+          ref: order._id.toString(),
+          note: 'Order fill',
+        }], { session });
+
+        await Ledger.create([{
+            user_id: user._id,
+            ref: order._id.toString(),
+            type: direction === 1 ? 'DEBIT' : 'CREDIT',
+            debit: direction === 1 ? gross : 0,
+            credit: direction === -1 ? gross : 0,
+            balance: updatedUser.fundsBalance,
+            note: `${order.side} ${instrument.tradingsymbol}`
+        }], { session });
+
+        if (order.product === 'CNC') {
+          await updateHoldings(user._id, instrument._id, trade, direction, session);
+        } else {
+          await updatePositions(user._id, instrument._id, order.product, trade, direction, session);
+        }
+      }
     });
+  } finally {
+    session.endSession();
+  }
+}
 
-    state.ledgerEntries.push({
-      id: createId('ledger'),
-      user_id: user.id,
-      date: now,
-      ref: order.id,
-      type: direction === 1 ? 'DEBIT' : 'CREDIT',
-      debit: direction === 1 ? gross : 0,
-      credit: direction === -1 ? gross : 0,
-      balance: account.balance,
-      note: `${order.side} ${instrument.tradingsymbol}`
-    });
+async function updateHoldings(userId, instrumentId, trade, direction, session) {
+    const holding = await Holding.findOne({ user: userId, instrument: instrumentId }).session(session);
 
-    if (order.product === 'CNC') {
-      updateHoldings(state, user.id, instrument.id, trade, direction, now);
+    if (!holding) {
+        if(direction > 0){
+            await Holding.create([{
+                user: userId,
+                instrument: instrumentId,
+                quantity: trade.qty,
+                averagePrice: trade.price,
+            }], { session });
+        } else {
+            throw new HttpError(400, 'NO_HOLDING', 'Cannot sell instrument not in holdings.');
+        }
     } else {
-      updatePositions(state, user.id, instrument.id, order.product, trade, direction, now);
+        const newQty = holding.quantity + direction * trade.qty;
+        if (newQty < 0) {
+            throw new HttpError(400, 'INSUFFICIENT_HOLDING', 'Insufficient quantity in holdings to sell.');
+        }
+
+        const totalCost = (holding.averagePrice * holding.quantity) + (trade.price * trade.qty * direction);
+        holding.quantity = newQty;
+        holding.averagePrice = newQty > 0 ? Number(Math.abs(totalCost / newQty).toFixed(2)) : 0;
+
+        await holding.save({ session });
     }
-  });
 }
 
-function updateHoldings(state, userId, instrumentId, trade, direction, now) {
-  let holding = state.holdings.find((item) => item.user_id === userId && item.instrument_id === instrumentId);
-  if (!holding) {
-    holding = {
-      id: createId('holding'),
-      user_id: userId,
-      instrument_id: instrumentId,
-      qty: 0,
-      avg_price: 0,
-      last_price: trade.price,
-      updatedAt: now
-    };
-    state.holdings.push(holding);
-  }
-  const newQty = holding.qty + direction * trade.qty;
-  if (newQty <= 0) {
-    holding.qty = 0;
-    holding.avg_price = 0;
-  } else {
-    const totalCost = holding.avg_price * holding.qty + trade.price * trade.qty * direction;
-    holding.qty = newQty;
-    holding.avg_price = Number(Math.abs(totalCost / holding.qty).toFixed(2));
-  }
-  holding.last_price = trade.price;
-  holding.updatedAt = now;
-}
+async function updatePositions(userId, instrumentId, product, trade, direction, session) {
+    const signedQty = direction * trade.qty;
 
-function updatePositions(state, userId, instrumentId, product, trade, direction, now) {
-  let position = state.positions.find(
-    (item) => item.user_id === userId && item.instrument_id === instrumentId && item.product === product
-  );
-  if (!position) {
-    position = {
-      id: createId('pos'),
-      user_id: userId,
-      instrument_id: instrumentId,
-      product,
-      qty: 0,
-      avg_price: 0,
-      createdAt: now,
-      updatedAt: now,
-      day_buy: 0,
-      day_sell: 0
-    };
-    state.positions.push(position);
-  }
-  const signedQty = direction * trade.qty;
-  position.qty += signedQty;
-  position.day_buy += direction === 1 ? trade.qty : 0;
-  position.day_sell += direction === -1 ? trade.qty : 0;
-  if (position.qty === 0) {
-    position.avg_price = 0;
-  } else {
-    const totalCost = position.avg_price * (position.qty - signedQty) + trade.price * signedQty;
-    position.avg_price = Number((totalCost / position.qty).toFixed(2));
-  }
-  position.updatedAt = now;
+    const position = await Position.findOneAndUpdate(
+        { user_id: userId, instrument_id: instrumentId, product: product },
+        {
+            $inc: {
+                qty: signedQty,
+                day_buy: direction === 1 ? trade.qty : 0,
+                day_sell: direction === -1 ? trade.qty : 0,
+            }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true, session }
+    );
+
+    if (position.qty !== 0) {
+        const totalCost = (position.avg_price * (position.qty - signedQty)) + (trade.price * signedQty);
+        position.avg_price = Number((totalCost / position.qty).toFixed(2));
+    } else {
+        position.avg_price = 0;
+    }
+    await position.save({ session });
 }
 
 module.exports = {

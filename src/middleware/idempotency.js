@@ -1,30 +1,35 @@
 const { HttpError } = require('../utils/httpError');
-const { getState, withState } = require('../store/dataStore');
+const IdempotencyKey = require('../models/IdempotencyKey');
 
 function idempotency(scope) {
-  return (req, res, next) => {
-    const key = req.headers['idempotency-key'];
-    if (!key) {
-      throw new HttpError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency-Key header is required');
+  return async (req, res, next) => {
+    try {
+        const key = req.headers['idempotency-key'];
+        if (!key) {
+          return next(new HttpError(400, 'IDEMPOTENCY_KEY_REQUIRED', 'Idempotency-Key header is required'));
+        }
+
+        const recordKey = `${scope}:${key}`;
+        const record = await IdempotencyKey.findOne({ key: recordKey });
+
+        if (record) {
+          return res.status(record.status).json(record.body);
+        }
+
+        res.locals.idempotencyRecordKey = recordKey;
+        res.locals.persistIdempotentResponse = async (status, body) => {
+          await IdempotencyKey.create({
+            key: recordKey,
+            scope,
+            status,
+            body
+          });
+        };
+
+        next();
+    } catch(error) {
+        next(error);
     }
-
-    const recordKey = `${scope}:${key}`;
-    const { idempotency } = getState();
-    const record = idempotency[recordKey];
-
-    if (record) {
-      res.status(record.status).json(record.body);
-      return;
-    }
-
-    res.locals.idempotencyRecordKey = recordKey;
-    res.locals.persistIdempotentResponse = (status, body) => {
-      withState((state) => {
-        state.idempotency[recordKey] = { status, body };
-      });
-    };
-
-    next();
   };
 }
 
