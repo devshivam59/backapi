@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Watchlist Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <h1 class="text-2xl mb-4">Watchlist API Test</h1>
+    <button onclick="testAPI()" class="bg-blue-600 px-4 py-2 rounded mb-4">Load Watchlist</button>
+    <div id="result" class="bg-gray-800 p-4 rounded"></div>
+    
+    <script>
+        const USER_TOKEN = localStorage.getItem('dhanhq_user_token') || 'user_slxkrlm5h';
+        console.log('User Token:', USER_TOKEN);
+        
+        async function testAPI() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = 'Loading...';
+            
+            try {
+                const response = await fetch('/api/watchlist', {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                
+                console.log('Response status:', response.status);
+                const data = await response.json();
+                console.log('Data:', data);
+                
+                resultDiv.innerHTML = `
+                    <h2 class="text-xl mb-2">API Response:</h2>
+                    <p class="mb-2">Status: ${response.status}</p>
+                    <p class="mb-2">Items: ${data.length}</p>
+                    <pre class="bg-gray-900 p-2 rounded overflow-auto">${JSON.stringify(data, null, 2)}</pre>
+                    
+                    <h2 class="text-xl mt-4 mb-2">Rendered Table:</h2>
+                    <table class="w-full border border-gray-700">
+                        <thead>
+                            <tr class="bg-gray-700">
+                                <th class="p-2">Symbol</th>
+                                <th class="p-2">Name</th>
+                                <th class="p-2">Exchange</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.map(item => `
+                                <tr class="border-t border-gray-700">
+                                    <td class="p-2">${item.trading_symbol}</td>
+                                    <td class="p-2">${item.display_name}</td>
+                                    <td class="p-2">${item.exchange_segment}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                `;
+            } catch (error) {
+                console.error('Error:', error);
+                resultDiv.innerHTML = `<p class="text-red-400">Error: ${error.message}</p>`;
+            }
+        }
+        
+        // Auto-load on page load
+        window.addEventListener('DOMContentLoaded', testAPI);
+    </script>
+</body>
+</html>
+

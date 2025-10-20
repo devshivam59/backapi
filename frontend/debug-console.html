@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Debug Console</title>
+    <style>
+        body {
+            background: #1a1a1a;
+            color: #00ff00;
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            margin: 0;
+        }
+        #console {
+            background: #000;
+            border: 2px solid #00ff00;
+            padding: 15px;
+            height: 80vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .error { color: #ff0000; }
+        .warning { color: #ffaa00; }
+        .info { color: #00aaff; }
+        .success { color: #00ff00; }
+        h1 { color: #00ff00; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>🔍 WebSocket Debug Console</h1>
+    <div id="console"></div>
+
+    <script>
+        const consoleDiv = document.getElementById('console');
+        
+        // Override console methods to capture logs
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+        
+        function addToConsole(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = type;
+            line.textContent = `[${timestamp}] ${message}`;
+            consoleDiv.appendChild(line);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            addToConsole(args.join(' '), 'info');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            addToConsole(args.join(' '), 'error');
+        };
+        
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            addToConsole(args.join(' '), 'warning');
+        };
+        
+        // Now load the watchlist page in an iframe to capture its logs
+        console.log('=== WebSocket Debug Console Started ===');
+        console.log('Loading watchlist page...');
+        
+        // Simulate the watchlist initialization
+        const USER_TOKEN = 'user_test123';
+        
+        // Load settings
+        fetch('/api/settings', {
+            headers: { 'X-User-Token': USER_TOKEN }
+        })
+        .then(res => res.json())
+        .then(settings => {
+            console.log('Settings loaded:', JSON.stringify(settings, null, 2));
+            
+            if (settings && settings.access_token) {
+                console.log('Access token found, initializing WebSocket...');
+                
+                // Load WebSocket handler
+                const script = document.createElement('script');
+                script.src = '/websocket-handler.js';
+                script.onload = () => {
+                    console.log('WebSocket handler script loaded');
+                    
+                    // Create WebSocket instance
+                    const ws = new DhanWebSocket(settings.access_token, settings.client_id);
+                    
+                    ws.onConnectionStatus = (status) => {
+                        console.log('[WebSocket] Status:', status);
+                    };
+                    
+                    ws.onTickerUpdate = (data) => {
+                        console.log('[WebSocket] Ticker:', JSON.stringify(data));
+                    };
+                    
+                    console.log('Connecting to WebSocket...');
+                    ws.connect();
+                    
+                    // Try to subscribe after 3 seconds
+                    setTimeout(() => {
+                        console.log('Attempting subscription...');
+                        ws.subscribe([
+                            { securityId: '1026077', exchangeSegment: 'BSE_CURRENCY' }
+                        ], 15);
+                    }, 3000);
+                };
+                script.onerror = (e) => {
+                    console.error('Failed to load WebSocket handler:', e);
+                };
+                document.head.appendChild(script);
+            } else {
+                console.error('No API credentials found in settings');
+            }
+        })
+        .catch(err => {
+            console.error('Failed to load settings:', err);
+        });
+    </script>
+</body>
+</html>
+

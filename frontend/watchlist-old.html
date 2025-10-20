@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DhanHQ Watchlist & Live Market</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="/websocket-handler.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        }
+        .price-up { color: #10b981; }
+        .price-down { color: #ef4444; }
+        .market-open { background: #10b981; }
+        .market-closed { background: #ef4444; }
+    </style>
+</head>
+<body class="min-h-screen text-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                    DhanHQ Live Market
+                </h1>
+                <p class="text-gray-400 mt-2">Real-time watchlist with live price streaming</p>
+            </div>
+            <div class="flex gap-4 items-center">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm text-gray-400">Market Status:</span>
+                    <span id="marketStatus" class="px-3 py-1 rounded-full text-xs font-semibold market-closed">CLOSED</span>
+                </div>
+                <button onclick="showSettings()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition">
+                    ⚙️ Settings
+                </button>
+                <a href="/" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                    📊 Instruments
+                </a>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Watchlist Items</div>
+                <div id="watchlistCount" class="text-3xl font-bold">0</div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Connection Status</div>
+                <div id="connectionStatus" class="text-3xl font-bold">Disconnected</div>
+            </div>
+            <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Last Update</div>
+                <div id="lastUpdate" class="text-3xl font-bold">--:--:--</div>
+            </div>
+        </div>
+
+        <!-- Watchlist Table -->
+        <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+            <div class="p-6 border-b border-gray-700">
+                <h2 class="text-xl font-bold">My Watchlist</h2>
+                <p class="text-gray-400 text-sm mt-1">Live prices update automatically during market hours</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-900">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Symbol</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Name</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Exchange</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">LTP</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Change</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">% Change</th>
+                            <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="watchlistTable" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                                No instruments in watchlist. Add from the <a href="/" class="text-blue-400 hover:underline">Instruments page</a>.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-700">
+            <h3 class="text-2xl font-bold mb-6">DhanHQ API Settings</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Access Token</label>
+                    <input id="accessToken" type="text" class="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter your DhanHQ access token">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Client ID</label>
+                    <input id="clientId" type="text" class="w-full px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500" placeholder="Enter your DhanHQ client ID">
+                </div>
+                <div class="bg-blue-900 bg-opacity-30 border border-blue-700 rounded-lg p-4 text-sm">
+                    <p class="text-blue-300 mb-2"><strong>How to get credentials:</strong></p>
+                    <ol class="text-blue-200 space-y-1 list-decimal list-inside">
+                        <li>Login to Dhan Web</li>
+                        <li>Go to Profile > "DhanHQ Trading APIs"</li>
+                        <li>Generate Access Token and copy Client ID</li>
+                    </ol>
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6">
+                <button onclick="saveSettings()" class="flex-1 px-4 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+                    Save
+                </button>
+                <button onclick="hideSettings()" class="flex-1 px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'https://5000-iytom3oluok7lib9x9jul-2ac7958e.manusvm.computer/api';
+        
+        // Get or create persistent user token
+        let USER_TOKEN = localStorage.getItem('dhanhq_user_token');
+        if (!USER_TOKEN) {
+            USER_TOKEN = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('dhanhq_user_token', USER_TOKEN);
+        }
+        
+        let watchlistData = [];
+        let dhanWS = null; // DhanWebSocket instance
+        let isMarketOpen = false;
+        let pollingInterval = null;
+        let userSettings = null; // Store user credentials
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Show loading indicator
+            document.getElementById('connectionStatus').textContent = 'Loading...';
+            
+            // Load settings and watchlist in parallel
+            await Promise.all([
+                loadSettings(),
+                loadWatchlist()
+            ]);
+            
+            // Check market status and start polling immediately
+            checkMarketStatus();
+            setInterval(checkMarketStatus, 60000); // Check every minute
+            
+            // Start price fetching immediately if watchlist has items
+            if (watchlistData.length > 0) {
+                startRestPolling();
+            }
+        });
+
+        // Load user settings
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${API_BASE}/settings`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                const data = await response.json();
+                userSettings = data; // Store for WebSocket
+                if (data.access_token) {
+                    document.getElementById('accessToken').value = data.access_token;
+                    document.getElementById('clientId').value = data.client_id || '';
+                    document.getElementById('connectionStatus').textContent = 'Credentials OK';
+                } else {
+                    document.getElementById('connectionStatus').textContent = 'No Credentials';
+                }
+            } catch (error) {
+                console.error('Failed to load settings:', error);
+                document.getElementById('connectionStatus').textContent = 'Error';
+            }
+        }
+
+        // Save settings
+        async function saveSettings() {
+            const accessToken = document.getElementById('accessToken').value.trim();
+            const clientId = document.getElementById('clientId').value.trim();
+
+            if (!accessToken || !clientId) {
+                alert('Please enter both Access Token and Client ID');
+                return;
+            }
+
+            try {
+                await fetch(`${API_BASE}/settings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({ access_token: accessToken, client_id: clientId })
+                });
+                alert('Settings saved successfully!');
+                hideSettings();
+                checkMarketStatus(); // Reconnect with new credentials
+            } catch (error) {
+                alert('Failed to save settings: ' + error.message);
+            }
+        }
+
+        function showSettings() {
+            document.getElementById('settingsModal').classList.remove('hidden');
+            document.getElementById('settingsModal').classList.add('flex');
+        }
+
+        function hideSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+            document.getElementById('settingsModal').classList.remove('flex');
+        }
+
+        // Load watchlist
+        async function loadWatchlist() {
+            try {
+                console.log('[Watchlist] Loading with token:', USER_TOKEN);
+                const response = await fetch(`${API_BASE}/watchlist`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                console.log('[Watchlist] Response status:', response.status);
+                watchlistData = await response.json();
+                console.log('[Watchlist] Loaded items:', watchlistData.length, watchlistData);
+                document.getElementById('watchlistCount').textContent = watchlistData.length;
+                renderWatchlist();
+                
+                // Start fetching prices immediately if watchlist has items
+                if (watchlistData.length > 0 && !pollingInterval) {
+                    fetchPrices(); // Immediate first fetch
+                }
+            } catch (error) {
+                console.error('Failed to load watchlist:', error);
+                document.getElementById('connectionStatus').textContent = 'Error';
+            }
+        }
+
+        // Render watchlist table
+        function renderWatchlist() {
+            const tbody = document.getElementById('watchlistTable');
+            
+            if (watchlistData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                            No instruments in watchlist. Add from the <a href="/" class="text-blue-400 hover:underline">Instruments page</a>.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = watchlistData.map(item => {
+                const price = priceData[item.security_id] || {};
+                const ltp = price.ltp || '--';
+                const change = price.change || 0;
+                const changePercent = price.changePercent || 0;
+                const priceClass = change >= 0 ? 'price-up' : 'price-down';
+
+                return `
+                    <tr class="hover:bg-gray-750">
+                        <td class="px-6 py-4 font-semibold">${item.trading_symbol || item.security_id}</td>
+                        <td class="px-6 py-4 text-gray-300">${item.display_name || '--'}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 bg-blue-900 text-blue-300 rounded text-xs font-semibold">
+                                ${item.exchange_segment}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right font-bold ${priceClass}">${ltp}</td>
+                        <td class="px-6 py-4 text-right ${priceClass}">${change >= 0 ? '+' : ''}${change.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-right ${priceClass}">${changePercent >= 0 ? '+' : ''}${changePercent.toFixed(2)}%</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="removeFromWatchlist(${item.id})" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition">
+                                🗑️ Remove
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // Remove from watchlist
+        async function removeFromWatchlist(id) {
+            if (!confirm('Remove this instrument from watchlist?')) return;
+
+            try {
+                await fetch(`${API_BASE}/watchlist/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                await loadWatchlist();
+            } catch (error) {
+                alert('Failed to remove: ' + error.message);
+            }
+        }
+
+        // Check market status
+        function checkMarketStatus() {
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const day = now.getDay();
+
+            // Market open: Mon-Fri, 9:15 AM - 3:30 PM IST
+            const isWeekday = day >= 1 && day <= 5;
+            const isMarketHours = (hours === 9 && minutes >= 15) || (hours > 9 && hours < 15) || (hours === 15 && minutes <= 30);
+            
+            isMarketOpen = isWeekday && isMarketHours;
+
+            const statusEl = document.getElementById('marketStatus');
+            if (isMarketOpen) {
+                statusEl.textContent = 'OPEN';
+                statusEl.className = 'px-3 py-1 rounded-full text-xs font-semibold market-open';
+                startLiveData();
+            } else {
+                statusEl.textContent = 'CLOSED';
+                statusEl.className = 'px-3 py-1 rounded-full text-xs font-semibold market-closed';
+                stopLiveData();
+                // Use REST API polling when market closed
+                startRestPolling();
+            }
+        }
+
+        // Start live data (WebSocket or REST)
+        function startLiveData() {
+            if (watchlistData.length === 0) return;
+            
+            // Use WebSocket if credentials are available and market is open
+            if (userSettings && userSettings.access_token && isMarketOpen) {
+                startWebSocket();
+            } else {
+                // Fallback to REST API polling
+                startRestPolling();
+            }
+        }
+
+        function stopLiveData() {
+            // Stop WebSocket
+            if (dhanWS) {
+                dhanWS.disconnect();
+                dhanWS = null;
+            }
+            // Stop REST polling
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            document.getElementById('connectionStatus').textContent = 'Disconnected';
+        }
+
+        // REST API polling
+        function startRestPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            if (watchlistData.length === 0) return;
+            
+            // Don't fetch again if we just fetched (within 1 second)
+            const now = Date.now();
+            if (!window.lastFetchTime || (now - window.lastFetchTime) > 1000) {
+                fetchPrices(); // Initial fetch
+            }
+            
+            pollingInterval = setInterval(fetchPrices, isMarketOpen ? 5000 : 30000); // 5s when open, 30s when closed
+            document.getElementById('connectionStatus').textContent = 'REST API';
+        }
+
+        async function fetchPrices() {
+            if (watchlistData.length === 0) return;
+            
+            // Track fetch time to avoid duplicate requests
+            window.lastFetchTime = Date.now();
+            
+            // Show loading indicator
+            document.getElementById('connectionStatus').textContent = 'Fetching...';
+
+            // Group by exchange segment
+            const grouped = {};
+            watchlistData.forEach(item => {
+                if (!grouped[item.exchange_segment]) {
+                    grouped[item.exchange_segment] = [];
+                }
+                grouped[item.exchange_segment].push(parseInt(item.security_id));
+            });
+
+            try {
+                const response = await fetch(`${API_BASE}/market/ltp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify(grouped)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        document.getElementById('connectionStatus').textContent = 'No Credentials';
+                        return;
+                    }
+                    throw new Error('API request failed');
+                }
+
+                const result = await response.json();
+                updatePrices(result.data);
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                document.getElementById('connectionStatus').textContent = 'REST API';
+            } catch (error) {
+                console.error('Failed to fetch prices:', error);
+                document.getElementById('connectionStatus').textContent = 'Error';
+            }
+        }
+
+        function updatePrices(data) {
+            // Parse DhanHQ response format
+            for (const segment in data) {
+                for (const securityId in data[segment]) {
+                    const ltp = data[segment][securityId].last_price;
+                    const prevClose = priceData[securityId]?.prevClose || ltp;
+                    const change = ltp - prevClose;
+                    const changePercent = prevClose ? (change / prevClose) * 100 : 0;
+
+                    priceData[securityId] = {
+                        ltp,
+                        prevClose,
+                        change,
+                        changePercent
+                    };
+                }
+            }
+            renderWatchlist();
+        }
+
+        // Start WebSocket connection
+        function startWebSocket() {
+            if (!userSettings || !userSettings.access_token) {
+                console.warn('[WebSocket] No credentials, falling back to REST');
+                startRestPolling();
+                return;
+            }
+
+            // Stop REST polling if active
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+
+            // Create WebSocket instance
+            if (!dhanWS) {
+                dhanWS = new DhanWebSocket(userSettings.access_token, userSettings.client_id || '');
+                
+                // Set up callbacks
+                dhanWS.onTickerUpdate = handleTickerUpdate;
+                dhanWS.onQuoteUpdate = handleQuoteUpdate;
+                dhanWS.onConnectionStatus = (status) => {
+                    document.getElementById('connectionStatus').textContent = `WebSocket: ${status}`;
+                };
+            }
+
+            // Connect
+            dhanWS.connect();
+
+            // Subscribe to all watchlist instruments
+            const instruments = watchlistData.map(item => ({
+                securityId: item.security_id,
+                exchangeSegment: item.exchange_segment
+            }));
+
+            // Wait for connection before subscribing
+            setTimeout(() => {
+                if (dhanWS.isConnected()) {
+                    dhanWS.subscribe(instruments, 15); // 15 = Ticker data (LTP + LTT)
+                }
+            }, 1000);
+        }
+
+        // Handle ticker update from WebSocket
+        function handleTickerUpdate(tickerData) {
+            // Find instrument in watchlist
+            const instrument = watchlistData.find(item => item.security_id === tickerData.securityId);
+            if (!instrument) return;
+
+            // Update price data
+            const prevClose = instrument.prevClose || tickerData.ltp;
+            const change = tickerData.ltp - prevClose;
+            const changePercent = prevClose > 0 ? ((change / prevClose) * 100) : 0;
+
+            instrument.ltp = tickerData.ltp;
+            instrument.change = change;
+            instrument.changePercent = changePercent;
+            instrument.lastUpdate = tickerData.timestamp;
+
+            // Update UI
+            renderWatchlist();
+            document.getElementById('lastUpdate').textContent = tickerData.timestamp.toLocaleTimeString();
+        }
+
+        // Handle quote update from WebSocket
+        function handleQuoteUpdate(quoteData) {
+            // Find instrument in watchlist
+            const instrument = watchlistData.find(item => item.security_id === quoteData.securityId);
+            if (!instrument) return;
+
+            // Update with more detailed data
+            const prevClose = quoteData.close || instrument.prevClose || quoteData.ltp;
+            const change = quoteData.ltp - prevClose;
+            const changePercent = prevClose > 0 ? ((change / prevClose) * 100) : 0;
+
+            instrument.ltp = quoteData.ltp;
+            instrument.change = change;
+            instrument.changePercent = changePercent;
+            instrument.volume = quoteData.volume;
+            instrument.open = quoteData.open;
+            instrument.high = quoteData.high;
+            instrument.low = quoteData.low;
+            instrument.lastUpdate = quoteData.timestamp;
+
+            // Update UI
+            renderWatchlist();
+            document.getElementById('lastUpdate').textContent = quoteData.timestamp.toLocaleTimeString();
+        }
+    </script>
+</body>
+</html>
+

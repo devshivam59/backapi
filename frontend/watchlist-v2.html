@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>DhanHQ Watchlist & Live Market</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .price-up { color: #10b981; }
+        .price-down { color: #ef4444; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading { animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-900 via-blue-900 to-gray-900 min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-4xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+                    DhanHQ Live Market
+                </h1>
+                <p class="text-gray-400 mt-2">Real-time watchlist with live price streaming</p>
+            </div>
+            <div class="flex gap-4">
+                <span id="marketStatus" class="px-4 py-2 bg-red-600 rounded-lg font-semibold text-sm">
+                    Market Status: CLOSED
+                </span>
+                <button onclick="openSettings()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg font-semibold transition">
+                    ⚙️ Settings
+                </button>
+                <a href="/" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+                    📊 Instruments
+                </a>
+            </div>
+        </div>
+
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
+                <h3 class="text-gray-400 text-sm font-semibold mb-2">Watchlist Items</h3>
+                <p id="watchlistCount" class="text-4xl font-bold text-blue-400">0</p>
+            </div>
+            <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
+                <h3 class="text-gray-400 text-sm font-semibold mb-2">Connection Status</h3>
+                <p id="connectionStatus" class="text-2xl font-bold text-yellow-400">Loading...</p>
+            </div>
+            <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
+                <h3 class="text-gray-400 text-sm font-semibold mb-2">Last Update</h3>
+                <p id="lastUpdate" class="text-2xl font-bold text-green-400">--:--:--</p>
+            </div>
+        </div>
+
+        <!-- Watchlist Table -->
+        <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden">
+            <div class="p-6 border-b border-gray-700">
+                <h2 class="text-2xl font-bold">My Watchlist</h2>
+                <p class="text-gray-400 mt-1">Live prices update automatically during market hours</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-700 bg-opacity-50">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Symbol</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Name</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Exchange</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">LTP</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Change</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">% Change</th>
+                            <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="watchlistTable" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                                <div class="loading">Loading watchlist...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 p-8 max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold mb-6">DhanHQ API Settings</h2>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Access Token</label>
+                    <input type="text" id="accessToken" placeholder="Enter your DhanHQ access token" 
+                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Client ID</label>
+                    <input type="text" id="clientId" placeholder="Enter your DhanHQ client ID" 
+                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+            <div class="flex gap-4 mt-6">
+                <button onclick="saveSettings()" class="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition">
+                    Save
+                </button>
+                <button onclick="closeSettings()" class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const USER_TOKEN = localStorage.getItem('dhanhq_user_token') || (() => {
+            const token = 'user_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('dhanhq_user_token', token);
+            return token;
+        })();
+        
+        let watchlistData = [];
+        let priceData = {};
+        let userSettings = null;
+        let pollingInterval = null;
+        
+        console.log('[Init] User Token:', USER_TOKEN);
+
+        // Load settings
+        async function loadSettings() {
+            try {
+                const response = await fetch(`${API_BASE}/settings`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                userSettings = await response.json();
+                console.log('[Settings] Loaded:', userSettings ? 'Yes' : 'No');
+                return userSettings;
+            } catch (error) {
+                console.error('[Settings] Load failed:', error);
+                return null;
+            }
+        }
+
+        // Load watchlist
+        async function loadWatchlist() {
+            try {
+                console.log('[Watchlist] Loading...');
+                const response = await fetch(`${API_BASE}/watchlist`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                watchlistData = await response.json();
+                console.log('[Watchlist] Loaded:', watchlistData.length, 'items');
+                console.log('[Watchlist] Data:', watchlistData);
+                
+                document.getElementById('watchlistCount').textContent = watchlistData.length;
+                renderWatchlist();
+                
+                // Start fetching prices if watchlist has items
+                if (watchlistData.length > 0) {
+                    fetchPrices();
+                    startPolling();
+                }
+            } catch (error) {
+                console.error('[Watchlist] Load failed:', error);
+                document.getElementById('connectionStatus').textContent = 'Error';
+                document.getElementById('watchlistTable').innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-red-400">
+                            Failed to load watchlist: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Render watchlist table
+        function renderWatchlist() {
+            const tbody = document.getElementById('watchlistTable');
+            
+            console.log('[Render] Rendering', watchlistData.length, 'items');
+            
+            if (watchlistData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                            No instruments in watchlist. Add from the <a href="/" class="text-blue-400 hover:underline">Instruments page</a>.
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = watchlistData.map(item => {
+                const price = priceData[item.security_id] || {};
+                const ltp = price.ltp || '--';
+                const change = price.change || 0;
+                const changePercent = price.changePercent || 0;
+                const priceClass = change >= 0 ? 'price-up' : 'price-down';
+
+                return `
+                    <tr class="hover:bg-gray-750 transition">
+                        <td class="px-6 py-4 font-semibold">${item.trading_symbol || item.security_id}</td>
+                        <td class="px-6 py-4 text-gray-300">${item.display_name || '--'}</td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 bg-blue-900 text-blue-300 rounded text-xs font-semibold">
+                                ${item.exchange_segment}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right font-bold ${priceClass}">${ltp}</td>
+                        <td class="px-6 py-4 text-right ${priceClass}">${change >= 0 ? '+' : ''}${typeof change === 'number' ? change.toFixed(2) : change}</td>
+                        <td class="px-6 py-4 text-right ${priceClass}">${changePercent >= 0 ? '+' : ''}${typeof changePercent === 'number' ? changePercent.toFixed(2) : changePercent}%</td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="removeFromWatchlist(${item.id})" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition">
+                                🗑️ Remove
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            console.log('[Render] Complete');
+        }
+
+        // Fetch prices from API
+        async function fetchPrices() {
+            if (watchlistData.length === 0) return;
+            
+            try {
+                console.log('[Prices] Fetching for', watchlistData.length, 'instruments');
+                
+                const instruments = watchlistData.map(item => ({
+                    exchange_segment: item.exchange_segment,
+                    security_id: item.security_id
+                }));
+
+                const response = await fetch(`${API_BASE}/market/ltp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({ instruments })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('[Prices] Received:', data);
+                    
+                    // Update price data
+                    data.forEach(price => {
+                        priceData[price.security_id] = price;
+                    });
+                    
+                    // Re-render table with new prices
+                    renderWatchlist();
+                    
+                    // Update status
+                    document.getElementById('connectionStatus').textContent = userSettings ? 'REST API' : 'No Credentials';
+                    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                } else {
+                    console.error('[Prices] HTTP', response.status);
+                    document.getElementById('connectionStatus').textContent = 'Error';
+                }
+            } catch (error) {
+                console.error('[Prices] Fetch failed:', error);
+                document.getElementById('connectionStatus').textContent = 'Error';
+            }
+        }
+
+        // Start polling
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            
+            // Poll every 5 seconds
+            pollingInterval = setInterval(fetchPrices, 5000);
+            console.log('[Polling] Started (5s interval)');
+        }
+
+        // Remove from watchlist
+        async function removeFromWatchlist(id) {
+            if (!confirm('Remove this instrument from watchlist?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE}/watchlist`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({ id })
+                });
+
+                if (response.ok) {
+                    await loadWatchlist();
+                }
+            } catch (error) {
+                console.error('[Remove] Failed:', error);
+                alert('Failed to remove instrument');
+            }
+        }
+
+        // Settings modal
+        function openSettings() {
+            if (userSettings) {
+                document.getElementById('accessToken').value = userSettings.access_token || '';
+                document.getElementById('clientId').value = userSettings.client_id || '';
+            }
+            document.getElementById('settingsModal').classList.remove('hidden');
+            document.getElementById('settingsModal').classList.add('flex');
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.add('hidden');
+            document.getElementById('settingsModal').classList.remove('flex');
+        }
+
+        async function saveSettings() {
+            const accessToken = document.getElementById('accessToken').value.trim();
+            const clientId = document.getElementById('clientId').value.trim();
+
+            if (!accessToken || !clientId) {
+                alert('Please enter both Access Token and Client ID');
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/settings`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({
+                        access_token: accessToken,
+                        client_id: clientId
+                    })
+                });
+
+                if (response.ok) {
+                    userSettings = { access_token: accessToken, client_id: clientId };
+                    alert('Settings saved successfully!');
+                    closeSettings();
+                    // Fetch prices immediately
+                    fetchPrices();
+                } else {
+                    alert('Failed to save settings');
+                }
+            } catch (error) {
+                console.error('[Settings] Save failed:', error);
+                alert('Failed to save settings');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            console.log('[Init] Starting...');
+            await loadSettings();
+            await loadWatchlist();
+        });
+    </script>
+</body>
+</html>
+
