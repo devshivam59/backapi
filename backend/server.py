@@ -337,7 +337,13 @@ def get_watchlist():
     user_token = request.headers.get('X-User-Token', 'default_user')
     conn = get_db()
     cursor = conn.cursor()
-    cursor.execute('SELECT * FROM watchlist WHERE user_token = ? ORDER BY added_at DESC', (user_token,))
+    cursor.execute('''
+        SELECT w.*, i.lot_size, i.segment 
+        FROM watchlist w 
+        LEFT JOIN instruments i ON w.security_id = i.security_id 
+        WHERE w.user_token = ? 
+        ORDER BY w.added_at DESC
+    ''', (user_token,))
     watchlist = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return jsonify(watchlist)

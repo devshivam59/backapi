@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>DhanHQ Trading</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        body { overscroll-behavior: none; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .price-up { color: #10b981; }
+        .price-down { color: #ef4444; }
+        .safe-area-top { padding-top: env(safe-area-inset-top); }
+        .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .modal-enter { animation: slideUp 0.3s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-50 select-none">
+    
+    <!-- Status Bar -->
+    <div class="bg-blue-600 text-white px-4 py-2 safe-area-top flex items-center justify-between text-sm">
+        <div class="flex items-center gap-2">
+            <span id="marketStatus" class="font-semibold">●</span>
+            <span id="marketTime">--:--</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="connectionStatus" class="text-xs">●</span>
+            <span id="currentTime" class="font-mono">--:--:--</span>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div id="appContent" class="pb-20">
+        
+        <!-- Watchlist Tab -->
+        <div id="watchlistTab" class="tab-content active">
+            <!-- Portfolio Summary -->
+            <div class="bg-white p-4 shadow-sm">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-bold text-gray-800">Portfolio</h2>
+                    <button onclick="refreshData()" class="text-blue-600 text-sm">🔄 Refresh</button>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <div class="text-xs text-gray-500 mb-1">Invested</div>
+                        <div id="investedAmount" class="text-xl font-bold text-gray-800">₹0.00</div>
+                    </div>
+                    <div>
+                        <div class="text-xs text-gray-500 mb-1">Current</div>
+                        <div id="currentAmount" class="text-xl font-bold text-gray-800">₹0.00</div>
+                    </div>
+                </div>
+                <div class="mt-3 pt-3 border-t border-gray-200">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">P&L</span>
+                        <span id="totalPnl" class="text-lg font-bold">₹0.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Bar -->
+            <div class="bg-white px-4 py-3 border-b border-gray-200">
+                <div class="flex items-center gap-2">
+                    <div class="flex-1 relative">
+                        <input type="text" id="searchInput" placeholder="Search stocks..." 
+                               class="w-full px-4 py-2 pl-10 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <span class="absolute left-3 top-2.5 text-gray-400">🔍</span>
+                    </div>
+                    <button class="px-4 py-2 bg-gray-100 rounded-lg text-sm font-semibold">Filter</button>
+                </div>
+            </div>
+
+            <!-- Watchlist Items -->
+            <div id="watchlistContainer" class="divide-y divide-gray-200">
+                <div class="p-4 text-center text-gray-400">
+                    Loading watchlist...
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="ordersTab" class="tab-content">
+            <div class="bg-white p-4 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800">Orders</h2>
+            </div>
+            <div id="ordersContainer" class="divide-y divide-gray-200">
+                <div class="p-4 text-center text-gray-400">
+                    No orders yet
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Tab -->
+        <div id="portfolioTab" class="tab-content">
+            <div class="bg-white p-4 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800">Holdings</h2>
+            </div>
+            <div id="positionsContainer" class="divide-y divide-gray-200">
+                <div class="p-4 text-center text-gray-400">
+                    No positions
+                </div>
+            </div>
+        </div>
+
+        <!-- Funds Tab -->
+        <div id="fundsTab" class="tab-content">
+            <div class="bg-white p-4 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800">Funds</h2>
+            </div>
+            <div class="p-4">
+                <div class="bg-white rounded-xl p-6 shadow-sm">
+                    <div class="mb-6">
+                        <div class="text-sm text-gray-500 mb-2">Available Funds</div>
+                        <div id="availableFunds" class="text-3xl font-bold text-green-600">₹0.00</div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <div class="text-xs text-gray-500 mb-1">Used</div>
+                            <div id="fundsUsed" class="text-lg font-semibold text-gray-800">₹0.00</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500 mb-1">Total</div>
+                            <div id="totalFunds" class="text-lg font-semibold text-gray-800">₹0.00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Tab -->
+        <div id="profileTab" class="tab-content">
+            <div class="bg-white p-4 border-b border-gray-200">
+                <h2 class="text-lg font-bold text-gray-800">Profile</h2>
+            </div>
+            <div class="p-4">
+                <div class="bg-white rounded-xl p-6 shadow-sm text-center">
+                    <div class="w-20 h-20 bg-blue-100 rounded-full mx-auto mb-4 flex items-center justify-center text-3xl">
+                        👤
+                    </div>
+                    <div class="text-lg font-bold text-gray-800 mb-1">Paper Trading Account</div>
+                    <div class="text-sm text-gray-500">User ID: user_test123</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 safe-area-bottom">
+        <div class="grid grid-cols-5 h-16">
+            <button onclick="switchTab('watchlist')" id="navWatchlist" class="flex flex-col items-center justify-center gap-1 text-blue-600">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z"/>
+                </svg>
+                <span class="text-xs font-semibold">Watchlist</span>
+            </button>
+            <button onclick="switchTab('orders')" id="navOrders" class="flex flex-col items-center justify-center gap-1 text-gray-400">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"/><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-xs font-semibold">Orders</span>
+            </button>
+            <button onclick="switchTab('portfolio')" id="navPortfolio" class="flex flex-col items-center justify-center gap-1 text-gray-400">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M3 12v3c0 1.657 3.134 3 7 3s7-1.343 7-3v-3c0 1.657-3.134 3-7 3s-7-1.343-7-3z"/><path d="M3 7v3c0 1.657 3.134 3 7 3s7-1.343 7-3V7c0 1.657-3.134 3-7 3S3 8.657 3 7z"/><path d="M17 5c0 1.657-3.134 3-7 3S3 6.657 3 5s3.134-3 7-3 7 1.343 7 3z"/>
+                </svg>
+                <span class="text-xs font-semibold">Portfolio</span>
+            </button>
+            <button onclick="switchTab('funds')" id="navFunds" class="flex flex-col items-center justify-center gap-1 text-gray-400">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M8.433 7.418c.155-.103.346-.196.567-.267v1.698a2.305 2.305 0 01-.567-.267C8.07 8.34 8 8.114 8 8c0-.114.07-.34.433-.582zM11 12.849v-1.698c.22.071.412.164.567.267.364.243.433.468.433.582 0 .114-.07.34-.433.582a2.305 2.305 0 01-.567.267z"/><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-13a1 1 0 10-2 0v.092a4.535 4.535 0 00-1.676.662C6.602 6.234 6 7.009 6 8c0 .99.602 1.765 1.324 2.246.48.32 1.054.545 1.676.662v1.941c-.391-.127-.68-.317-.843-.504a1 1 0 10-1.51 1.31c.562.649 1.413 1.076 2.353 1.253V15a1 1 0 102 0v-.092a4.535 4.535 0 001.676-.662C13.398 13.766 14 12.991 14 12c0-.99-.602-1.765-1.324-2.246A4.535 4.535 0 0011 9.092V7.151c.391.127.68.317.843.504a1 1 0 101.511-1.31c-.563-.649-1.413-1.076-2.354-1.253V5z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-xs font-semibold">Funds</span>
+            </button>
+            <button onclick="switchTab('profile')" id="navProfile" class="flex flex-col items-center justify-center gap-1 text-gray-400">
+                <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"/>
+                </svg>
+                <span class="text-xs font-semibold">Profile</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Order Pad Modal -->
+    <div id="orderPadModal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50">
+        <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl modal-enter safe-area-bottom">
+            <div class="p-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                    <h3 id="orderSymbol" class="text-lg font-bold text-gray-800">--</h3>
+                    <div id="orderLTP" class="text-sm text-gray-500">LTP: ₹--</div>
+                </div>
+                <button onclick="closeOrderPad()" class="text-gray-400 text-2xl">×</button>
+            </div>
+            
+            <div class="p-4">
+                <!-- Product Type -->
+                <div class="mb-4">
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Product</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="setProduct('CNC')" id="btnCNC" class="px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm">
+                            CNC (Delivery)
+                        </button>
+                        <button onclick="setProduct('MIS')" id="btnMIS" class="px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm">
+                            MIS (Intraday)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Order Type -->
+                <div class="mb-4">
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Order Type</div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="setOrderType('MARKET')" id="btnMarket" class="px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm">
+                            Market
+                        </button>
+                        <button onclick="setOrderType('LIMIT')" id="btnLimit" class="px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm">
+                            Limit
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Quantity -->
+                <div class="mb-4">
+                    <div class="text-sm font-semibold text-gray-700 mb-2">
+                        <span id="quantityLabel">Quantity</span>
+                        <span id="lotSizeInfo" class="text-xs text-gray-500 ml-2"></span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="decrementQty()" class="w-12 h-12 bg-gray-100 rounded-lg font-bold text-xl">−</button>
+                        <input type="number" id="orderQty" value="1" min="1" 
+                               class="flex-1 px-4 py-3 border-2 border-gray-300 rounded-lg text-center text-lg font-semibold focus:outline-none focus:border-blue-500">
+                        <button onclick="incrementQty()" class="w-12 h-12 bg-gray-100 rounded-lg font-bold text-xl">+</button>
+                    </div>
+                </div>
+
+                <!-- Price (for Limit orders) -->
+                <div id="priceSection" class="mb-4 hidden">
+                    <div class="text-sm font-semibold text-gray-700 mb-2">Price</div>
+                    <input type="number" id="orderPrice" step="0.05" 
+                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg text-lg font-semibold focus:outline-none focus:border-blue-500">
+                </div>
+
+                <!-- Order Value -->
+                <div class="mb-6 p-4 bg-gray-50 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <span class="text-sm text-gray-600">Order Value</span>
+                        <span id="orderValue" class="text-lg font-bold text-gray-800">₹0.00</span>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="grid grid-cols-2 gap-3">
+                    <button onclick="submitOrder('BUY')" id="btnBuy" class="px-6 py-4 bg-green-600 text-white rounded-lg font-bold text-lg">
+                        BUY
+                    </button>
+                    <button onclick="submitOrder('SELL')" id="btnSell" class="px-6 py-4 bg-red-600 text-white rounded-lg font-bold text-lg">
+                        SELL
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+        const USER_TOKEN = 'user_test123';
+        
+        let watchlistData = [];
+        let positionsData = [];
+        let ordersData = [];
+        let priceData = {};
+        let currentOrderItem = null;
+        let orderState = {
+            product: 'CNC',
+            orderType: 'MARKET',
+            quantity: 1,
+            price: 0
+        };
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadUserAccount();
+            await loadWatchlist();
+            await loadPositions();
+            await loadOrders();
+            startPriceUpdates();
+            updateTime();
+            setInterval(updateTime, 1000);
+        });
+
+        // Tab Switching
+        function switchTab(tab) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('[id^="nav"]').forEach(el => {
+                el.classList.remove('text-blue-600');
+                el.classList.add('text-gray-400');
+            });
+            
+            // Show selected tab
+            document.getElementById(tab + 'Tab').classList.add('active');
+            document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.remove('text-gray-400');
+            document.getElementById('nav' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('text-blue-600');
+        }
+
+        // Load User Account
+        async function loadUserAccount() {
+            try {
+                const response = await fetch(`${API_BASE}/user/account`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                const data = await response.json();
+                
+                document.getElementById('availableFunds').textContent = formatCurrency(data.funds_available);
+                document.getElementById('fundsUsed').textContent = formatCurrency(data.funds_used);
+                document.getElementById('totalFunds').textContent = formatCurrency(data.total_funds);
+            } catch (error) {
+                console.error('Failed to load account:', error);
+            }
+        }
+
+        // Load Watchlist
+        async function loadWatchlist() {
+            try {
+                const response = await fetch(`${API_BASE}/watchlist`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                watchlistData = await response.json();
+                renderWatchlist();
+            } catch (error) {
+                console.error('Failed to load watchlist:', error);
+            }
+        }
+
+        // Load Positions
+        async function loadPositions() {
+            try {
+                const response = await fetch(`${API_BASE}/user/positions`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                positionsData = await response.json();
+                renderPositions();
+            } catch (error) {
+                console.error('Failed to load positions:', error);
+            }
+        }
+
+        // Load Orders
+        async function loadOrders() {
+            try {
+                const response = await fetch(`${API_BASE}/user/orders`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                ordersData = await response.json();
+                renderOrders();
+            } catch (error) {
+                console.error('Failed to load orders:', error);
+            }
+        }
+
+        // Render Watchlist
+        function renderWatchlist() {
+            const container = document.getElementById('watchlistContainer');
+            
+            if (!watchlistData || watchlistData.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-gray-400">No instruments in watchlist</div>';
+                return;
+            }
+
+            container.innerHTML = watchlistData.map(item => {
+                const price = priceData[item.security_id];
+                const ltp = price ? price.ltp.toFixed(2) : '--';
+                const change = price && item.prev_close ? ((price.ltp - item.prev_close) / item.prev_close * 100).toFixed(2) : '0.00';
+                const changeClass = parseFloat(change) >= 0 ? 'price-up' : 'price-down';
+                const changeSign = parseFloat(change) >= 0 ? '+' : '';
+                
+                return `
+                    <div onclick="openOrderPad('${item.security_id}')" class="bg-white p-4 active:bg-gray-50 transition">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="font-semibold text-gray-800">${item.trading_symbol}</div>
+                                <div class="text-xs text-gray-500">${item.exchange_segment}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-lg font-bold text-gray-800">₹${ltp}</div>
+                                <div class="text-sm ${changeClass}">${changeSign}${change}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Render Positions
+        function renderPositions() {
+            const container = document.getElementById('positionsContainer');
+            
+            if (!positionsData || positionsData.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-gray-400">No positions</div>';
+                return;
+            }
+
+            let totalPnl = 0;
+            let totalInvested = 0;
+            let totalCurrent = 0;
+
+            container.innerHTML = positionsData.map(pos => {
+                const price = priceData[pos.security_id];
+                const ltp = price ? price.ltp : pos.avg_price;
+                const pnl = (ltp - pos.avg_price) * pos.quantity;
+                const pnlPercent = ((ltp - pos.avg_price) / pos.avg_price * 100).toFixed(2);
+                const pnlClass = pnl >= 0 ? 'price-up' : 'price-down';
+                const pnlSign = pnl >= 0 ? '+' : '';
+
+                totalPnl += pnl;
+                totalInvested += pos.avg_price * pos.quantity;
+                totalCurrent += ltp * pos.quantity;
+
+                return `
+                    <div class="bg-white p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <div class="font-semibold text-gray-800">${pos.trading_symbol || pos.security_id}</div>
+                                <div class="text-xs text-gray-500">${pos.quantity} qty • Avg ₹${pos.avg_price.toFixed(2)}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-lg font-bold text-gray-800">₹${ltp.toFixed(2)}</div>
+                                <div class="text-sm ${pnlClass}">${pnlSign}${pnlPercent}%</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-600">P&L</span>
+                            <span class="font-bold ${pnlClass}">${pnlSign}₹${Math.abs(pnl).toFixed(2)}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Update portfolio summary
+            document.getElementById('investedAmount').textContent = formatCurrency(totalInvested);
+            document.getElementById('currentAmount').textContent = formatCurrency(totalCurrent);
+            const pnlEl = document.getElementById('totalPnl');
+            pnlEl.textContent = (totalPnl >= 0 ? '+' : '') + formatCurrency(totalPnl);
+            pnlEl.className = `text-lg font-bold ${totalPnl >= 0 ? 'price-up' : 'price-down'}`;
+        }
+
+        // Render Orders
+        function renderOrders() {
+            const container = document.getElementById('ordersContainer');
+            
+            if (!ordersData || ordersData.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-gray-400">No orders yet</div>';
+                return;
+            }
+
+            container.innerHTML = ordersData.map(order => {
+                const sideClass = order.side === 'BUY' ? 'text-green-600' : 'text-red-600';
+                return `
+                    <div class="bg-white p-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <div>
+                                <div class="font-semibold text-gray-800">${order.trading_symbol || order.security_id}</div>
+                                <div class="text-xs text-gray-500">${order.product_type} • ${order.order_type}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="text-sm font-bold ${sideClass}">${order.side}</div>
+                                <div class="text-xs text-gray-500">${order.status}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between text-sm">
+                            <span class="text-gray-600">${order.quantity} qty @ ₹${order.price.toFixed(2)}</span>
+                            <span class="text-gray-600">${new Date(order.created_at).toLocaleTimeString('en-IN')}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Order Pad
+        function openOrderPad(securityId) {
+            const item = watchlistData.find(i => i.security_id === securityId);
+            if (!item) return;
+
+            currentOrderItem = item;
+            document.getElementById('orderSymbol').textContent = item.trading_symbol;
+            const price = priceData[securityId];
+            const ltp = price ? price.ltp.toFixed(2) : '--';
+            document.getElementById('orderLTP').textContent = `LTP: ₹${ltp}`;
+            
+            // Check if FNO (lot size > 1)
+            if (item.lot_size && item.lot_size > 1) {
+                document.getElementById('quantityLabel').textContent = 'Lots';
+                document.getElementById('lotSizeInfo').textContent = `(1 Lot = ${item.lot_size} qty)`;
+            } else {
+                document.getElementById('quantityLabel').textContent = 'Quantity';
+                document.getElementById('lotSizeInfo').textContent = '';
+            }
+            
+            resetOrderPad();
+            document.getElementById('orderPadModal').classList.remove('hidden');
+        }
+
+        function closeOrderPad() {
+            document.getElementById('orderPadModal').classList.add('hidden');
+        }
+
+        function resetOrderPad() {
+            orderState = { product: 'CNC', orderType: 'MARKET', quantity: 1, price: 0 };
+            document.getElementById('orderQty').value = 1;
+            setProduct('CNC');
+            setOrderType('MARKET');
+            updateOrderValue();
+        }
+
+        function setProduct(product) {
+            orderState.product = product;
+            document.getElementById('btnCNC').className = product === 'CNC' ? 
+                'px-4 py-3 border-2 border-blue-600 bg-blue-50 text-blue-600 rounded-lg font-semibold text-sm' :
+                'px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm';
+            document.getElementById('btnMIS').className = product === 'MIS' ? 
+                'px-4 py-3 border-2 border-blue-600 bg-blue-50 text-blue-600 rounded-lg font-semibold text-sm' :
+                'px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm';
+        }
+
+        function setOrderType(type) {
+            orderState.orderType = type;
+            document.getElementById('btnMarket').className = type === 'MARKET' ? 
+                'px-4 py-3 border-2 border-blue-600 bg-blue-50 text-blue-600 rounded-lg font-semibold text-sm' :
+                'px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm';
+            document.getElementById('btnLimit').className = type === 'LIMIT' ? 
+                'px-4 py-3 border-2 border-blue-600 bg-blue-50 text-blue-600 rounded-lg font-semibold text-sm' :
+                'px-4 py-3 border-2 border-gray-300 rounded-lg font-semibold text-sm';
+            
+            document.getElementById('priceSection').classList.toggle('hidden', type === 'MARKET');
+            updateOrderValue();
+        }
+
+        function incrementQty() {
+            const input = document.getElementById('orderQty');
+            input.value = parseInt(input.value) + 1;
+            updateOrderValue();
+        }
+
+        function decrementQty() {
+            const input = document.getElementById('orderQty');
+            if (parseInt(input.value) > 1) {
+                input.value = parseInt(input.value) - 1;
+                updateOrderValue();
+            }
+        }
+
+        function updateOrderValue() {
+            const qty = parseInt(document.getElementById('orderQty').value) || 1;
+            const actualQty = currentOrderItem && currentOrderItem.lot_size > 1 ? qty * currentOrderItem.lot_size : qty;
+            const price = priceData[currentOrderItem.security_id];
+            const ltp = price ? price.ltp : 0;
+            const value = actualQty * ltp;
+            document.getElementById('orderValue').textContent = formatCurrency(value);
+        }
+
+        async function submitOrder(side) {
+            const qty = parseInt(document.getElementById('orderQty').value) || 1;
+            const actualQty = currentOrderItem.lot_size > 1 ? qty * currentOrderItem.lot_size : qty;
+            
+            try {
+                const response = await fetch(`${API_BASE}/user/orders`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({
+                        security_id: currentOrderItem.security_id,
+                        exchange_segment: currentOrderItem.exchange_segment,
+                        side: side,
+                        quantity: actualQty,
+                        product_type: orderState.product,
+                        order_type: orderState.orderType,
+                        price: orderState.orderType === 'LIMIT' ? parseFloat(document.getElementById('orderPrice').value) : 0
+                    })
+                });
+
+                if (response.ok) {
+                    closeOrderPad();
+                    await loadOrders();
+                    await loadPositions();
+                    await loadUserAccount();
+                    alert(`${side} order placed successfully!`);
+                } else {
+                    alert('Failed to place order');
+                }
+            } catch (error) {
+                console.error('Order failed:', error);
+                alert('Failed to place order');
+            }
+        }
+
+        // Price Updates
+        function startPriceUpdates() {
+            fetchPrices();
+            setInterval(fetchPrices, 5000);
+        }
+
+        async function fetchPrices() {
+            if (watchlistData.length === 0) return;
+            
+            try {
+                const instruments = watchlistData.map(item => ({
+                    exchange_segment: item.exchange_segment,
+                    security_id: item.security_id
+                }));
+
+                const response = await fetch(`${API_BASE}/market/ltp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({ instruments })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    data.forEach(price => {
+                        priceData[price.security_id] = price;
+                    });
+                    renderWatchlist();
+                    renderPositions();
+                    document.getElementById('connectionStatus').textContent = '● Live';
+                    document.getElementById('marketStatus').textContent = '● OPEN';
+                }
+            } catch (error) {
+                console.error('Price fetch failed:', error);
+                document.getElementById('connectionStatus').textContent = '● Error';
+            }
+        }
+
+        async function refreshData() {
+            await loadUserAccount();
+            await loadWatchlist();
+            await loadPositions();
+            await loadOrders();
+            await fetchPrices();
+        }
+
+        // Utilities
+        function formatCurrency(value) {
+            return '₹' + value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function updateTime() {
+            const now = new Date();
+            document.getElementById('currentTime').textContent = now.toLocaleTimeString('en-IN', { 
+                hour: '2-digit', minute: '2-digit', second: '2-digit' 
+            });
+            document.getElementById('marketTime').textContent = now.toLocaleTimeString('en-IN', { 
+                hour: '2-digit', minute: '2-digit'
+            });
+        }
+
+        // Update order value on quantity change
+        document.getElementById('orderQty').addEventListener('input', updateOrderValue);
+        document.getElementById('orderPrice').addEventListener('input', updateOrderValue);
+    </script>
+</body>
+</html>
+
