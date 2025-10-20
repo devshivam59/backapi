@@ -689,7 +689,9 @@
                     await loadUserAccount();
                     alert(`${side} order placed successfully!`);
                 } else {
-                    alert('Failed to place order');
+                    const error = await response.json();
+                    alert(`Failed to place order: ${error.message || 'Unknown error'}`);
+                    console.error('Order error:', error);
                 }
             } catch (error) {
                 console.error('Order failed:', error);
