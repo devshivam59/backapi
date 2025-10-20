@@ -765,8 +765,8 @@
             }
             
             const filtered = watchlistData.filter(item => {
-                const symbol = (item.symbol || '').toLowerCase();
-                const name = (item.instrument_name || '').toLowerCase();
+                const symbol = (item.trading_symbol || '').toLowerCase();
+                const name = (item.display_name || '').toLowerCase();
                 const exchange = (item.exchange_segment || '').toLowerCase();
                 return symbol.includes(query) || name.includes(query) || exchange.includes(query);
             });
@@ -791,10 +791,10 @@
                 const changeSign = change >= 0 ? '+' : '';
                 
                 return `
-                    <div class="bg-white p-4 active:bg-gray-50" onclick="openOrderPad(${item.watchlist_id}, 'BUY')">
+                    <div class="bg-white p-4 active:bg-gray-50" onclick="openOrderPad(${item.id}, 'BUY')">
                         <div class="flex items-center justify-between">
                             <div class="flex-1">
-                                <div class="font-semibold text-gray-800">${item.symbol}</div>
+                                <div class="font-semibold text-gray-800">${item.trading_symbol}</div>
                                 <div class="text-xs text-gray-500 mt-0.5">${item.exchange_segment}</div>
                             </div>
                             <div class="text-right">
