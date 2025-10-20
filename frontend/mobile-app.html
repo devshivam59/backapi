@@ -671,12 +671,14 @@
                     },
                     body: JSON.stringify({
                         security_id: currentOrderItem.security_id,
+                        instrument_symbol: currentOrderItem.symbol,
                         exchange_segment: currentOrderItem.exchange_segment,
                         side: side,
                         quantity: actualQty,
                         product_type: orderState.product,
                         order_type: orderState.orderType,
-                        price: orderState.orderType === 'LIMIT' ? parseFloat(document.getElementById('orderPrice').value) : 0
+                        limit_price: orderState.orderType === 'LIMIT' ? parseFloat(document.getElementById('orderPrice').value) : 0,
+                        current_ltp: priceData[`${currentOrderItem.exchange_segment}_${currentOrderItem.security_id}`]?.ltp || 0
                     })
                 });
 
