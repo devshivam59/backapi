@@ -477,6 +477,302 @@ def get_market_ltp():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ============================================
+# PAPER TRADING API ENDPOINTS
+# ============================================
+
+# Get user account info
+@app.route('/api/user/account', methods=['GET'])
+def get_user_account():
+    user_token = request.headers.get('X-User-Token', 'user_test123')
+    
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get or create user
+        cursor.execute('SELECT * FROM users WHERE user_token = ?', (user_token,))
+        user = cursor.fetchone()
+        
+        if not user:
+            # Create new user with ₹10 Lakhs
+            cursor.execute('''
+                INSERT INTO users (user_token, virtual_funds_available, virtual_funds_used)
+                VALUES (?, 1000000.00, 0.00)
+            ''', (user_token,))
+            conn.commit()
+            cursor.execute('SELECT * FROM users WHERE user_token = ?', (user_token,))
+            user = cursor.fetchone()
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'data': {
+                'user_id': user['user_id'],
+                'funds_available': float(user['virtual_funds_available']),
+                'funds_used': float(user['virtual_funds_used']),
+                'total_funds': 1000000.00
+            }
+        })
+    except Exception as e:
+        print(f"Error getting user account: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Place order
+@app.route('/api/orders', methods=['POST'])
+def place_order():
+    user_token = request.headers.get('X-User-Token', 'user_test123')
+    data = request.json
+    
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        # Get user
+        cursor.execute('SELECT * FROM users WHERE user_token = ?', (user_token,))
+        user = cursor.fetchone()
+        
+        if not user:
+            return jsonify({'status': 'error', 'message': 'User not found'}), 404
+        
+        user_id = user['user_id']
+        funds_available = float(user['virtual_funds_available'])
+        
+        # Extract order details
+        security_id = data.get('security_id')
+        instrument_symbol = data.get('instrument_symbol')
+        exchange_segment = data.get('exchange_segment')
+        side = data.get('side')  # BUY or SELL
+        product_type = data.get('product_type')  # INTRADAY or DELIVERY
+        order_type = data.get('order_type')  # MARKET or LIMIT
+        quantity = int(data.get('quantity'))
+        limit_price = data.get('limit_price')
+        current_ltp = float(data.get('current_ltp', 0))
+        
+        # Validate inputs
+        if not all([security_id, instrument_symbol, exchange_segment, side, product_type, order_type, quantity]):
+            return jsonify({'status': 'error', 'message': 'Missing required fields'}), 400
+        
+        # For MARKET orders, use current LTP as execution price
+        if order_type == 'MARKET':
+            executed_price = current_ltp
+        else:
+            # For LIMIT orders, check if limit price is met (simplified for paper trading)
+            executed_price = float(limit_price) if limit_price else current_ltp
+        
+        # Calculate order value
+        order_value = executed_price * quantity
+        
+        # Validate funds for BUY orders
+        if side == 'BUY':
+            if order_value > funds_available:
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Insufficient funds. ₹{order_value:.2f} required, ₹{funds_available:.2f} available'
+                }), 400
+        
+        # For SELL orders, check if position exists
+        if side == 'SELL':
+            cursor.execute('''
+                SELECT * FROM positions 
+                WHERE user_id = ? AND security_id = ? AND exchange_segment = ? AND product_type = ?
+            ''', (user_id, security_id, exchange_segment, product_type))
+            position = cursor.fetchone()
+            
+            if not position or position['quantity'] < quantity:
+                available_qty = position['quantity'] if position else 0
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Insufficient quantity. {quantity} required, {available_qty} available'
+                }), 400
+        
+        # Execute the order
+        cursor.execute('''
+            INSERT INTO orders (
+                user_id, user_token, security_id, instrument_symbol, exchange_segment,
+                side, product_type, order_type, quantity, limit_price, executed_price,
+                status, executed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'EXECUTED', CURRENT_TIMESTAMP)
+        ''', (user_id, user_token, security_id, instrument_symbol, exchange_segment,
+              side, product_type, order_type, quantity, limit_price, executed_price))
+        
+        order_id = cursor.lastrowid
+        
+        # Update position
+        if side == 'BUY':
+            # Deduct funds
+            cursor.execute('''
+                UPDATE users 
+                SET virtual_funds_available = virtual_funds_available - ?,
+                    virtual_funds_used = virtual_funds_used + ?
+                WHERE user_id = ?
+            ''', (order_value, order_value, user_id))
+            
+            # Check if position exists
+            cursor.execute('''
+                SELECT * FROM positions 
+                WHERE user_id = ? AND security_id = ? AND exchange_segment = ? AND product_type = ?
+            ''', (user_id, security_id, exchange_segment, product_type))
+            position = cursor.fetchone()
+            
+            if position:
+                # Update existing position (weighted average)
+                old_qty = position['quantity']
+                old_avg = float(position['average_price'])
+                new_qty = old_qty + quantity
+                new_avg = ((old_qty * old_avg) + (quantity * executed_price)) / new_qty
+                
+                cursor.execute('''
+                    UPDATE positions 
+                    SET quantity = ?, average_price = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE position_id = ?
+                ''', (new_qty, new_avg, position['position_id']))
+            else:
+                # Create new position
+                cursor.execute('''
+                    INSERT INTO positions (
+                        user_id, user_token, security_id, instrument_symbol, exchange_segment,
+                        product_type, quantity, average_price
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, user_token, security_id, instrument_symbol, exchange_segment,
+                      product_type, quantity, executed_price))
+        
+        else:  # SELL
+            # Add funds
+            cursor.execute('''
+                UPDATE users 
+                SET virtual_funds_available = virtual_funds_available + ?,
+                    virtual_funds_used = virtual_funds_used - ?
+                WHERE user_id = ?
+            ''', (order_value, order_value, user_id))
+            
+            # Update position
+            cursor.execute('''
+                SELECT * FROM positions 
+                WHERE user_id = ? AND security_id = ? AND exchange_segment = ? AND product_type = ?
+            ''', (user_id, security_id, exchange_segment, product_type))
+            position = cursor.fetchone()
+            
+            new_qty = position['quantity'] - quantity
+            
+            if new_qty == 0:
+                # Close position
+                cursor.execute('DELETE FROM positions WHERE position_id = ?', (position['position_id'],))
+            else:
+                # Reduce quantity
+                cursor.execute('''
+                    UPDATE positions 
+                    SET quantity = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE position_id = ?
+                ''', (new_qty, position['position_id']))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Order {side} executed successfully',
+            'data': {
+                'order_id': order_id,
+                'executed_price': executed_price,
+                'order_value': order_value
+            }
+        })
+        
+    except Exception as e:
+        print(f"Error placing order: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Get user positions
+@app.route('/api/positions', methods=['GET'])
+def get_positions():
+    user_token = request.headers.get('X-User-Token', 'user_test123')
+    
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT p.*, i.display_name, i.trading_symbol
+            FROM positions p
+            LEFT JOIN instruments i ON p.security_id = i.security_id
+            WHERE p.user_token = ?
+            ORDER BY p.updated_at DESC
+        ''', (user_token,))
+        
+        positions = []
+        for row in cursor.fetchall():
+            positions.append({
+                'position_id': row['position_id'],
+                'security_id': row['security_id'],
+                'instrument_symbol': row['instrument_symbol'],
+                'display_name': row['display_name'],
+                'trading_symbol': row['trading_symbol'],
+                'exchange_segment': row['exchange_segment'],
+                'product_type': row['product_type'],
+                'quantity': row['quantity'],
+                'average_price': float(row['average_price'])
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'data': positions
+        })
+        
+    except Exception as e:
+        print(f"Error getting positions: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# Get user orders
+@app.route('/api/orders', methods=['GET'])
+def get_orders():
+    user_token = request.headers.get('X-User-Token', 'user_test123')
+    
+    try:
+        conn = get_db()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM orders
+            WHERE user_token = ?
+            ORDER BY created_at DESC
+            LIMIT 100
+        ''', (user_token,))
+        
+        orders = []
+        for row in cursor.fetchall():
+            orders.append({
+                'order_id': row['order_id'],
+                'security_id': row['security_id'],
+                'instrument_symbol': row['instrument_symbol'],
+                'exchange_segment': row['exchange_segment'],
+                'side': row['side'],
+                'product_type': row['product_type'],
+                'order_type': row['order_type'],
+                'quantity': row['quantity'],
+                'limit_price': float(row['limit_price']) if row['limit_price'] else None,
+                'executed_price': float(row['executed_price']) if row['executed_price'] else None,
+                'status': row['status'],
+                'created_at': row['created_at'],
+                'executed_at': row['executed_at']
+            })
+        
+        conn.close()
+        
+        return jsonify({
+            'status': 'success',
+            'data': orders
+        })
+        
+    except Exception as e:
+        print(f"Error getting orders: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 if __name__ == '__main__':
     init_db()
     app.run(host='0.0.0.0', port=5000)

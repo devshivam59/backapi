@@ -42,18 +42,22 @@
         </div>
 
         <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
+                <h3 class="text-gray-400 text-sm font-semibold mb-2">Available Funds</h3>
+                <p id="availableFunds" class="text-3xl font-bold text-green-400">₹0.00</p>
+            </div>
             <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
                 <h3 class="text-gray-400 text-sm font-semibold mb-2">Watchlist Items</h3>
-                <p id="watchlistCount" class="text-4xl font-bold text-blue-400">0</p>
+                <p id="watchlistCount" class="text-3xl font-bold text-blue-400">0</p>
             </div>
             <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
                 <h3 class="text-gray-400 text-sm font-semibold mb-2">Connection Status</h3>
-                <p id="connectionStatus" class="text-2xl font-bold text-yellow-400">Loading...</p>
+                <p id="connectionStatus" class="text-xl font-bold text-yellow-400">Loading...</p>
             </div>
             <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
                 <h3 class="text-gray-400 text-sm font-semibold mb-2">Last Update</h3>
-                <p id="lastUpdate" class="text-2xl font-bold text-green-400">--:--:--</p>
+                <p id="lastUpdate" class="text-xl font-bold text-green-400">--:--:--</p>
             </div>
         </div>
 
@@ -78,12 +82,89 @@
                     </thead>
                     <tbody id="watchlistTable" class="divide-y divide-gray-700">
                         <tr>
-                            <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                            <td colspan="8" class="px-6 py-12 text-center text-gray-400">
                                 <div class="loading">Loading watchlist...</div>
                             </td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Order Pad Modal -->
+    <div id="orderPadModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+        <div class="bg-gray-800 rounded-xl border border-gray-700 p-8 max-w-md w-full mx-4">
+            <h2 class="text-2xl font-bold mb-2" id="orderPadTitle">Place Order</h2>
+            <p class="text-gray-400 text-sm mb-6" id="orderPadInstrument">Instrument</p>
+            
+            <div class="space-y-4">
+                <!-- Product Type -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Product Type</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="selectProductType('INTRADAY')" id="productIntraday" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                            MIS (Intraday)
+                        </button>
+                        <button onclick="selectProductType('DELIVERY')" id="productDelivery" class="px-4 py-2 bg-blue-600 rounded-lg font-semibold">
+                            CNC (Delivery)
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Order Type -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Order Type</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button onclick="selectOrderType('MARKET')" id="orderMarket" class="px-4 py-2 bg-blue-600 rounded-lg font-semibold">
+                            Market
+                        </button>
+                        <button onclick="selectOrderType('LIMIT')" id="orderLimit" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                            Limit
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Quantity -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Quantity</label>
+                    <input type="number" id="orderQuantity" value="1" min="1" 
+                           oninput="updateOrderValue()"
+                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                
+                <!-- Limit Price (hidden for MARKET orders) -->
+                <div id="limitPriceDiv" class="hidden">
+                    <label class="block text-sm font-semibold text-gray-300 mb-2">Limit Price (₹)</label>
+                    <input type="number" id="orderLimitPrice" step="0.05" 
+                           oninput="updateOrderValue()"
+                           class="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500">
+                </div>
+                
+                <!-- Order Value -->
+                <div class="bg-gray-700 rounded-lg p-4">
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-gray-400">Current LTP:</span>
+                        <span class="font-semibold" id="orderCurrentLTP">₹0.00</span>
+                    </div>
+                    <div class="flex justify-between text-sm mb-1">
+                        <span class="text-gray-400">Order Value:</span>
+                        <span class="font-semibold" id="orderValue">₹0.00</span>
+                    </div>
+                    <div class="flex justify-between text-sm">
+                        <span class="text-gray-400">Available Funds:</span>
+                        <span class="font-semibold text-green-400" id="orderAvailableFunds">₹0.00</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-4 mt-6">
+                <button onclick="submitOrder()" id="submitOrderBtn" class="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition">
+                    Place Order
+                </button>
+                <button onclick="closeOrderPad()" class="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition">
+                    Cancel
+                </button>
             </div>
         </div>
     </div>
@@ -125,6 +206,19 @@
         let priceData = {};
         let userSettings = null;
         let pollingInterval = null;
+        let userAccount = null;
+        
+        // Order pad state
+        let currentOrder = {
+            side: 'BUY',
+            security_id: '',
+            instrument_symbol: '',
+            display_name: '',
+            exchange_segment: '',
+            product_type: 'DELIVERY',
+            order_type: 'MARKET',
+            current_ltp: 0
+        };
         
         console.log('[Init] User Token:', USER_TOKEN);
 
@@ -189,7 +283,7 @@
             if (watchlistData.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7" class="px-6 py-12 text-center text-gray-400">
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-400">
                             No instruments in watchlist. Add from the <a href="/" class="text-blue-400 hover:underline">Instruments page</a>.
                         </td>
                     </tr>
@@ -216,9 +310,15 @@
                         <td class="px-6 py-4 text-right font-bold ${priceClass}">${ltp}</td>
                         <td class="px-6 py-4 text-right ${priceClass}">${change >= 0 ? '+' : ''}${typeof change === 'number' ? change.toFixed(2) : change}</td>
                         <td class="px-6 py-4 text-right ${priceClass}">${changePercent >= 0 ? '+' : ''}${typeof changePercent === 'number' ? changePercent.toFixed(2) : changePercent}%</td>
-                        <td class="px-6 py-4 text-center">
-                            <button onclick="removeFromWatchlist(${item.id})" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition">
-                                🗑️ Remove
+                        <td class="px-6 py-4 text-center space-x-2">
+                            <button onclick="openOrderPad('BUY', '${item.security_id}', '${item.trading_symbol}', '${item.display_name}', '${item.exchange_segment}', ${ltp})" class="px-3 py-1 bg-green-600 hover:bg-green-700 rounded text-sm font-semibold transition">
+                                📈 BUY
+                            </button>
+                            <button onclick="openOrderPad('SELL', '${item.security_id}', '${item.trading_symbol}', '${item.display_name}', '${item.exchange_segment}', ${ltp})" class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition">
+                                📉 SELL
+                            </button>
+                            <button onclick="removeFromWatchlist(${item.id})" class="px-2 py-1 bg-gray-600 hover:bg-gray-700 rounded text-xs transition">
+                                🗑️
                             </button>
                         </td>
                     </tr>
@@ -345,6 +445,157 @@
         function closeSettings() {
             document.getElementById('settingsModal').classList.add('hidden');
             document.getElementById('settingsModal').classList.remove('flex');
+        }
+
+        // ============================================
+        // TRADING FUNCTIONS
+        // ============================================
+        
+        // Load user account
+        async function loadUserAccount() {
+            try {
+                const response = await fetch(`${API_BASE}/user/account`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    userAccount = result.data;
+                    document.getElementById('availableFunds').textContent = `₹${userAccount.funds_available.toFixed(2)}`;
+                    console.log('[Account] Loaded:', userAccount);
+                }
+            } catch (error) {
+                console.error('[Account] Load failed:', error);
+            }
+        }
+        
+        // Open order pad
+        function openOrderPad(side, securityId, symbol, displayName, exchangeSegment, ltp) {
+            currentOrder.side = side;
+            currentOrder.security_id = securityId;
+            currentOrder.instrument_symbol = symbol;
+            currentOrder.display_name = displayName;
+            currentOrder.exchange_segment = exchangeSegment;
+            currentOrder.current_ltp = parseFloat(ltp) || 0;
+            
+            // Update UI
+            document.getElementById('orderPadTitle').textContent = `${side} Order`;
+            document.getElementById('orderPadInstrument').textContent = `${displayName} (${symbol})`;
+            document.getElementById('orderCurrentLTP').textContent = `₹${currentOrder.current_ltp.toFixed(2)}`;
+            document.getElementById('orderAvailableFunds').textContent = `₹${userAccount?.funds_available.toFixed(2) || '0.00'}`;
+            document.getElementById('submitOrderBtn').textContent = `${side} Now`;
+            document.getElementById('submitOrderBtn').className = side === 'BUY' ? 
+                'flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg font-semibold transition' :
+                'flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg font-semibold transition';
+            
+            // Reset form
+            document.getElementById('orderQuantity').value = '1';
+            selectProductType('DELIVERY');
+            selectOrderType('MARKET');
+            updateOrderValue();
+            
+            // Show modal
+            document.getElementById('orderPadModal').classList.remove('hidden');
+            document.getElementById('orderPadModal').classList.add('flex');
+        }
+        
+        function closeOrderPad() {
+            document.getElementById('orderPadModal').classList.add('hidden');
+            document.getElementById('orderPadModal').classList.remove('flex');
+        }
+        
+        function selectProductType(type) {
+            currentOrder.product_type = type;
+            
+            // Update button styles
+            document.getElementById('productIntraday').className = type === 'INTRADAY' ?
+                'px-4 py-2 bg-blue-600 rounded-lg font-semibold' :
+                'px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition';
+            document.getElementById('productDelivery').className = type === 'DELIVERY' ?
+                'px-4 py-2 bg-blue-600 rounded-lg font-semibold' :
+                'px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition';
+        }
+        
+        function selectOrderType(type) {
+            currentOrder.order_type = type;
+            
+            // Update button styles
+            document.getElementById('orderMarket').className = type === 'MARKET' ?
+                'px-4 py-2 bg-blue-600 rounded-lg font-semibold' :
+                'px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition';
+            document.getElementById('orderLimit').className = type === 'LIMIT' ?
+                'px-4 py-2 bg-blue-600 rounded-lg font-semibold' :
+                'px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg font-semibold transition';
+            
+            // Show/hide limit price input
+            if (type === 'LIMIT') {
+                document.getElementById('limitPriceDiv').classList.remove('hidden');
+                document.getElementById('orderLimitPrice').value = currentOrder.current_ltp.toFixed(2);
+            } else {
+                document.getElementById('limitPriceDiv').classList.add('hidden');
+            }
+            
+            updateOrderValue();
+        }
+        
+        function updateOrderValue() {
+            const quantity = parseInt(document.getElementById('orderQuantity').value) || 0;
+            let price = currentOrder.current_ltp;
+            
+            if (currentOrder.order_type === 'LIMIT') {
+                price = parseFloat(document.getElementById('orderLimitPrice').value) || currentOrder.current_ltp;
+            }
+            
+            const orderValue = price * quantity;
+            document.getElementById('orderValue').textContent = `₹${orderValue.toFixed(2)}`;
+        }
+        
+        async function submitOrder() {
+            const quantity = parseInt(document.getElementById('orderQuantity').value);
+            
+            if (!quantity || quantity <= 0) {
+                alert('Please enter a valid quantity');
+                return;
+            }
+            
+            const orderData = {
+                security_id: currentOrder.security_id,
+                instrument_symbol: currentOrder.instrument_symbol,
+                exchange_segment: currentOrder.exchange_segment,
+                side: currentOrder.side,
+                product_type: currentOrder.product_type,
+                order_type: currentOrder.order_type,
+                quantity: quantity,
+                current_ltp: currentOrder.current_ltp
+            };
+            
+            if (currentOrder.order_type === 'LIMIT') {
+                orderData.limit_price = parseFloat(document.getElementById('orderLimitPrice').value);
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE}/orders`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify(orderData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert(`Order ${currentOrder.side} executed successfully!\n\nExecuted Price: ₹${result.data.executed_price.toFixed(2)}\nOrder Value: ₹${result.data.order_value.toFixed(2)}`);
+                    closeOrderPad();
+                    loadUserAccount(); // Refresh account balance
+                } else {
+                    alert(`Order failed: ${result.message}`);
+                }
+            } catch (error) {
+                console.error('[Order] Submit failed:', error);
+                alert('Failed to place order. Please try again.');
+            }
         }
 
         async function saveSettings() {
@@ -586,6 +837,7 @@
         document.addEventListener('DOMContentLoaded', async () => {
             console.log('[Init] Starting...');
             await loadSettings();
+            await loadUserAccount();
             await loadWatchlist();
             
             // Update market status
