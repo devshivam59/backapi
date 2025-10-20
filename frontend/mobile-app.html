@@ -284,6 +284,95 @@
             quantity: 1,
             price: 0
         };
+        
+        // WebSocket for live prices
+        let ws = null;
+        let wsConnected = false;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 50;
+        
+        function connectWebSocket() {
+            try {
+                // Try to connect to backend WebSocket server
+                const wsUrl = 'ws://localhost:8765';
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('[WS] Connected to backend');
+                    wsConnected = true;
+                    reconnectAttempts = 0;
+                    document.getElementById('connectionStatus').textContent = '● Live';
+                    document.getElementById('connectionStatus').className = 'text-xs text-green-400';
+                    
+                    // Subscribe to watchlist instruments
+                    subscribeToInstruments();
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'ticker') {
+                            // Update price data
+                            const key = `${data.exchange_segment}_${data.security_id}`;
+                            priceData[key] = {
+                                ltp: data.ltp,
+                                change: data.change || 0,
+                                change_percent: data.change_percent || 0
+                            };
+                            
+                            // Re-render watchlist and positions
+                            renderWatchlist();
+                            renderPositions();
+                        }
+                    } catch (error) {
+                        console.error('[WS] Message parse error:', error);
+                    }
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('[WS] Error:', error);
+                    wsConnected = false;
+                };
+                
+                ws.onclose = () => {
+                    console.log('[WS] Disconnected');
+                    wsConnected = false;
+                    document.getElementById('connectionStatus').textContent = '● Error';
+                    document.getElementById('connectionStatus').className = 'text-xs text-red-400';
+                    
+                    // Try to reconnect
+                    if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                        reconnectAttempts++;
+                        setTimeout(connectWebSocket, 2000);
+                    } else {
+                        // Fall back to REST API polling
+                        console.log('[WS] Max reconnect attempts reached, using REST API');
+                        startPriceUpdates();
+                    }
+                };
+            } catch (error) {
+                console.error('[WS] Connection error:', error);
+                // Fall back to REST API
+                startPriceUpdates();
+            }
+        }
+        
+        function subscribeToInstruments() {
+            if (!ws || !wsConnected || watchlistData.length === 0) return;
+            
+            const instruments = watchlistData.map(item => ({
+                exchange_segment: item.exchange_segment,
+                security_id: item.security_id
+            }));
+            
+            ws.send(JSON.stringify({
+                type: 'subscribe',
+                instruments: instruments
+            }));
+            
+            console.log('[WS] Subscribed to', instruments.length, 'instruments');
+        }
 
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
@@ -291,7 +380,10 @@
             await loadWatchlist();
             await loadPositions();
             await loadOrders();
-            startPriceUpdates();
+            
+            // Try WebSocket first, fall back to REST API if it fails
+            connectWebSocket();
+            
             updateTime();
             setInterval(updateTime, 1000);
         });
