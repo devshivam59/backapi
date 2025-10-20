@@ -435,7 +435,7 @@
         // Load Positions
         async function loadPositions() {
             try {
-                const response = await fetch(`${API_BASE}/user/positions`, {
+                const response = await fetch(`${API_BASE}/positions`, {
                     headers: { 'X-User-Token': USER_TOKEN }
                 });
                 positionsData = await response.json();
@@ -448,7 +448,7 @@
         // Load Orders
         async function loadOrders() {
             try {
-                const response = await fetch(`${API_BASE}/user/orders`, {
+                const response = await fetch(`${API_BASE}/orders`, {
                     headers: { 'X-User-Token': USER_TOKEN }
                 });
                 ordersData = await response.json();
@@ -663,7 +663,7 @@
             const actualQty = currentOrderItem.lot_size > 1 ? qty * currentOrderItem.lot_size : qty;
             
             try {
-                const response = await fetch(`${API_BASE}/user/orders`, {
+                const response = await fetch(`${API_BASE}/orders`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
