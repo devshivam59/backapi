@@ -290,6 +290,30 @@
         let wsConnected = false;
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 50;
+        let restApiInterval = null;
+        let lastWebSocketData = Date.now();
+        
+        // Market hours detection
+        function isMarketOpen() {
+            const now = new Date();
+            const day = now.getDay(); // 0 = Sunday, 6 = Saturday
+            
+            // Weekend check
+            if (day === 0 || day === 6) return false;
+            
+            // Get IST time
+            const istOffset = 5.5 * 60 * 60 * 1000;
+            const istTime = new Date(now.getTime() + istOffset);
+            const hours = istTime.getHours();
+            const minutes = istTime.getMinutes();
+            const totalMinutes = hours * 60 + minutes;
+            
+            // Market hours: 9:15 AM - 3:30 PM IST
+            const marketOpen = 9 * 60 + 15;  // 9:15 AM
+            const marketClose = 15 * 60 + 30; // 3:30 PM
+            
+            return totalMinutes >= marketOpen && totalMinutes <= marketClose;
+        }
         
         function connectWebSocket() {
             try {
@@ -313,6 +337,9 @@
                         const data = JSON.parse(event.data);
                         
                         if (data.type === 'ticker') {
+                            // Update last data timestamp
+                            lastWebSocketData = Date.now();
+                            
                             // Update price data
                             const key = `${data.exchange_segment}_${data.security_id}`;
                             priceData[key] = {
@@ -324,6 +351,12 @@
                             // Re-render watchlist and positions
                             renderWatchlist();
                             renderPositions();
+                            
+                            // Stop REST API fallback if running
+                            if (restApiInterval) {
+                                clearInterval(restApiInterval);
+                                restApiInterval = null;
+                            }
                         }
                     } catch (error) {
                         console.error('[WS] Message parse error:', error);
@@ -374,6 +407,94 @@
             console.log('[WS] Subscribed to', instruments.length, 'instruments');
         }
 
+        // REST API fallback for prices
+        async function fetchPricesViaREST() {
+            if (watchlistData.length === 0) return;
+            
+            try {
+                const instruments = watchlistData.map(item => ({
+                    exchange_segment: item.exchange_segment,
+                    security_id: item.security_id
+                }));
+                
+                const response = await fetch(`${API_BASE}/market/ltp`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-User-Token': USER_TOKEN
+                    },
+                    body: JSON.stringify({ instruments })
+                });
+                
+                if (response.ok) {
+                    const prices = await response.json();
+                    prices.forEach(price => {
+                        const key = `${price.exchange_segment}_${price.security_id}`;
+                        priceData[key] = {
+                            ltp: price.ltp,
+                            change: price.change || 0,
+                            change_percent: price.change_percent || 0
+                        };
+                    });
+                    renderWatchlist();
+                    renderPositions();
+                }
+            } catch (error) {
+                console.error('[REST] Price fetch error:', error);
+            }
+        }
+        
+        function startRESTFallback() {
+            if (restApiInterval) return; // Already running
+            
+            console.log('[REST] Starting fallback price updates');
+            document.getElementById('connectionStatus').textContent = '● REST';
+            document.getElementById('connectionStatus').className = 'text-xs text-yellow-400';
+            
+            // Fetch immediately
+            fetchPricesViaREST();
+            
+            // Then poll every 5 seconds
+            restApiInterval = setInterval(fetchPricesViaREST, 5000);
+        }
+        
+        function stopRESTFallback() {
+            if (restApiInterval) {
+                clearInterval(restApiInterval);
+                restApiInterval = null;
+                console.log('[REST] Stopped fallback');
+            }
+        }
+        
+        // Monitor WebSocket data and fallback if needed
+        setInterval(() => {
+            const timeSinceLastData = Date.now() - lastWebSocketData;
+            
+            if (wsConnected && timeSinceLastData > 30000) {
+                // No WebSocket data for 30 seconds, use REST API
+                if (!restApiInterval) {
+                    console.log('[Monitor] No WebSocket data for 30s, falling back to REST');
+                    startRESTFallback();
+                }
+            }
+            
+            // Update market status
+            const marketOpen = isMarketOpen();
+            const statusEl = document.getElementById('marketStatus');
+            if (marketOpen) {
+                statusEl.textContent = '● OPEN';
+                statusEl.className = 'font-semibold text-green-400';
+            } else {
+                statusEl.textContent = '● CLOSED';
+                statusEl.className = 'font-semibold text-red-400';
+                
+                // Use REST API when market is closed
+                if (!restApiInterval) {
+                    startRESTFallback();
+                }
+            }
+        }, 10000); // Check every 10 seconds
+        
         // Initialize
         document.addEventListener('DOMContentLoaded', async () => {
             await loadUserAccount();
@@ -381,8 +502,23 @@
             await loadPositions();
             await loadOrders();
             
-            // Try WebSocket first, fall back to REST API if it fails
-            connectWebSocket();
+            // Start with appropriate data source
+            if (isMarketOpen()) {
+                // Try WebSocket during market hours
+                connectWebSocket();
+                
+                // Fallback to REST after 10 seconds if WebSocket doesn't connect
+                setTimeout(() => {
+                    if (!wsConnected) {
+                        console.log('[Init] WebSocket not connected, using REST API');
+                        startRESTFallback();
+                    }
+                }, 10000);
+            } else {
+                // Use REST API outside market hours
+                console.log('[Init] Market closed, using REST API');
+                startRESTFallback();
+            }
             
             // Setup search
             const searchInput = document.getElementById('searchInput');
