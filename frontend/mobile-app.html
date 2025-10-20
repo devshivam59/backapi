@@ -384,6 +384,13 @@
             // Try WebSocket first, fall back to REST API if it fails
             connectWebSocket();
             
+            // Setup search
+            const searchInput = document.getElementById('searchInput');
+            searchInput.addEventListener('input', (e) => {
+                searchQuery = e.target.value;
+                filterWatchlist();
+            });
+            
             updateTime();
             setInterval(updateTime, 1000);
         });
@@ -745,6 +752,59 @@
             await loadPositions();
             await loadOrders();
             await fetchPrices();
+        }
+
+        // Search functionality
+        let searchQuery = '';
+        
+        function filterWatchlist() {
+            const query = searchQuery.toLowerCase().trim();
+            if (!query) {
+                renderWatchlist();
+                return;
+            }
+            
+            const filtered = watchlistData.filter(item => {
+                const symbol = (item.symbol || '').toLowerCase();
+                const name = (item.instrument_name || '').toLowerCase();
+                const exchange = (item.exchange_segment || '').toLowerCase();
+                return symbol.includes(query) || name.includes(query) || exchange.includes(query);
+            });
+            
+            renderWatchlistFiltered(filtered);
+        }
+        
+        function renderWatchlistFiltered(filtered) {
+            const container = document.getElementById('watchlistContainer');
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="p-4 text-center text-gray-400">No matching instruments</div>';
+                return;
+            }
+            
+            container.innerHTML = filtered.map(item => {
+                const key = `${item.exchange_segment}_${item.security_id}`;
+                const price = priceData[key];
+                const ltp = price?.ltp || 0;
+                const change = price?.change_percent || 0;
+                const changeClass = change >= 0 ? 'price-up' : 'price-down';
+                const changeSign = change >= 0 ? '+' : '';
+                
+                return `
+                    <div class="bg-white p-4 active:bg-gray-50" onclick="openOrderPad(${item.watchlist_id}, 'BUY')">
+                        <div class="flex items-center justify-between">
+                            <div class="flex-1">
+                                <div class="font-semibold text-gray-800">${item.symbol}</div>
+                                <div class="text-xs text-gray-500 mt-0.5">${item.exchange_segment}</div>
+                            </div>
+                            <div class="text-right">
+                                <div class="font-bold text-gray-800">${ltp > 0 ? '₹' + ltp.toFixed(2) : '₹--'}</div>
+                                <div class="text-xs ${changeClass} font-semibold">${changeSign}${change.toFixed(2)}%</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         // Utilities
