@@ -42,10 +42,14 @@
         </div>
 
         <!-- Stats Cards -->
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
             <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
                 <h3 class="text-gray-400 text-sm font-semibold mb-2">Available Funds</h3>
                 <p id="availableFunds" class="text-3xl font-bold text-green-400">₹0.00</p>
+            </div>
+            <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
+                <h3 class="text-gray-400 text-sm font-semibold mb-2">Total P&L</h3>
+                <p id="totalPnl" class="text-3xl font-bold text-gray-400">₹0.00</p>
             </div>
             <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 p-6">
                 <h3 class="text-gray-400 text-sm font-semibold mb-2">Watchlist Items</h3>
@@ -84,6 +88,69 @@
                         <tr>
                             <td colspan="8" class="px-6 py-12 text-center text-gray-400">
                                 <div class="loading">Loading watchlist...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Positions Table -->
+        <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden mt-8">
+            <div class="p-6 border-b border-gray-700">
+                <h2 class="text-2xl font-bold">My Positions</h2>
+                <p class="text-gray-400 mt-1">Live P&L calculated with real-time prices</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-700 bg-opacity-50">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Instrument</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Type</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Qty</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Avg Price</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">LTP</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Current Value</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">P&L</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">P&L %</th>
+                            <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="positionsTable" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="9" class="px-6 py-12 text-center text-gray-400">
+                                <div class="loading">Loading positions...</div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Orders Table -->
+        <div class="bg-gray-800 bg-opacity-50 backdrop-blur rounded-xl border border-gray-700 overflow-hidden mt-8">
+            <div class="p-6 border-b border-gray-700">
+                <h2 class="text-2xl font-bold">Order Book</h2>
+                <p class="text-gray-400 mt-1">Your recent trading history</p>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-700 bg-opacity-50">
+                        <tr>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Time</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Instrument</th>
+                            <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">Type</th>
+                            <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Side</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Qty</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Price</th>
+                            <th class="px-6 py-4 text-right text-sm font-semibold text-gray-300">Value</th>
+                            <th class="px-6 py-4 text-center text-sm font-semibold text-gray-300">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ordersTable" class="divide-y divide-gray-700">
+                        <tr>
+                            <td colspan="8" class="px-6 py-12 text-center text-gray-400">
+                                <div class="loading">Loading orders...</div>
                             </td>
                         </tr>
                     </tbody>
@@ -203,6 +270,8 @@
         localStorage.setItem('dhanhq_user_token', USER_TOKEN);
         
         let watchlistData = [];
+        let positionsData = [];
+        let ordersData = [];
         let priceData = {};
         let userSettings = null;
         let pollingInterval = null;
@@ -272,6 +341,204 @@
                     </tr>
                 `;
             }
+        }
+
+        // Load positions
+        async function loadPositions() {
+            try {
+                console.log('[Positions] Loading...');
+                const response = await fetch(`${API_BASE}/positions`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                positionsData = result.data || [];
+                console.log('[Positions] Loaded:', positionsData.length, 'positions');
+                
+                renderPositions();
+            } catch (error) {
+                console.error('[Positions] Load failed:', error);
+                document.getElementById('positionsTable').innerHTML = `
+                    <tr>
+                        <td colspan="9" class="px-6 py-12 text-center text-red-400">
+                            Failed to load positions: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Render positions table
+        function renderPositions() {
+            const tbody = document.getElementById('positionsTable');
+            
+            console.log('[Positions] Rendering', positionsData.length, 'positions');
+            
+            if (positionsData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="px-6 py-12 text-center text-gray-400">
+                            No positions yet. Place your first order to start trading!
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = positionsData.map(position => {
+                const ltp = priceData[position.security_id]?.ltp || position.average_price;
+                const currentValue = ltp * position.quantity;
+                const investedValue = position.average_price * position.quantity;
+                const pnl = currentValue - investedValue;
+                const pnlPercent = (pnl / investedValue) * 100;
+                const pnlClass = pnl >= 0 ? 'text-green-400' : 'text-red-400';
+
+                return `
+                    <tr class="hover:bg-gray-750 transition">
+                        <td class="px-6 py-4">
+                            <div class="font-semibold">${position.display_name || position.instrument_symbol}</div>
+                            <div class="text-xs text-gray-400">${position.trading_symbol || position.security_id}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 ${
+                                position.product_type === 'INTRADAY' ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'
+                            } rounded text-xs font-semibold">
+                                ${position.product_type === 'INTRADAY' ? 'MIS' : 'CNC'}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right font-semibold">${position.quantity}</td>
+                        <td class="px-6 py-4 text-right">₹${position.average_price.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-right font-semibold">₹${ltp.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-right">₹${currentValue.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-right font-bold ${pnlClass}">
+                            ${pnl >= 0 ? '+' : ''}₹${pnl.toFixed(2)}
+                        </td>
+                        <td class="px-6 py-4 text-right font-bold ${pnlClass}">
+                            ${pnl >= 0 ? '+' : ''}${pnlPercent.toFixed(2)}%
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <button onclick="openOrderPad('SELL', '${position.security_id}', '${position.instrument_symbol}', '${position.display_name}', '${position.exchange_segment}', ${ltp})" 
+                                    class="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-semibold transition">
+                                📉 SELL
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // Calculate total P&L
+            let totalPnl = 0;
+            positionsData.forEach(position => {
+                const ltp = priceData[position.security_id]?.ltp || position.average_price;
+                const currentValue = ltp * position.quantity;
+                const investedValue = position.average_price * position.quantity;
+                totalPnl += (currentValue - investedValue);
+            });
+            
+            // Update total P&L display
+            const pnlEl = document.getElementById('totalPnl');
+            if (pnlEl) {
+                pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}₹${totalPnl.toFixed(2)}`;
+                pnlEl.className = totalPnl >= 0 ? 'text-3xl font-bold text-green-400' : 'text-3xl font-bold text-red-400';
+            }
+            
+            console.log('[Positions] Render complete, Total P&L:', totalPnl);
+        }
+
+        // Load orders
+        async function loadOrders() {
+            try {
+                console.log('[Orders] Loading...');
+                const response = await fetch(`${API_BASE}/orders`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                ordersData = result.data || [];
+                console.log('[Orders] Loaded:', ordersData.length, 'orders');
+                
+                renderOrders();
+            } catch (error) {
+                console.error('[Orders] Load failed:', error);
+                document.getElementById('ordersTable').innerHTML = `
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-red-400">
+                            Failed to load orders: ${error.message}
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+
+        // Render orders table
+        function renderOrders() {
+            const tbody = document.getElementById('ordersTable');
+            
+            console.log('[Orders] Rendering', ordersData.length, 'orders');
+            
+            if (ordersData.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-400">
+                            No orders yet. Place your first order to start trading!
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = ordersData.map(order => {
+                const orderValue = order.executed_price * order.quantity;
+                const sideClass = order.side === 'BUY' ? 'bg-green-600' : 'bg-red-600';
+                const statusClass = order.status === 'EXECUTED' ? 'bg-green-900 text-green-300' : 'bg-gray-700 text-gray-300';
+                
+                // Format timestamp
+                const time = new Date(order.executed_at || order.created_at).toLocaleTimeString('en-IN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit'
+                });
+
+                return `
+                    <tr class="hover:bg-gray-750 transition">
+                        <td class="px-6 py-4 text-sm text-gray-400">${time}</td>
+                        <td class="px-6 py-4">
+                            <div class="font-semibold">${order.instrument_symbol}</div>
+                            <div class="text-xs text-gray-400">${order.exchange_segment}</div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <span class="px-2 py-1 ${
+                                order.product_type === 'INTRADAY' ? 'bg-purple-900 text-purple-300' : 'bg-blue-900 text-blue-300'
+                            } rounded text-xs font-semibold">
+                                ${order.product_type === 'INTRADAY' ? 'MIS' : 'CNC'}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="px-3 py-1 ${sideClass} rounded text-xs font-bold">
+                                ${order.side}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-right font-semibold">${order.quantity}</td>
+                        <td class="px-6 py-4 text-right">₹${order.executed_price.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-right font-semibold">₹${orderValue.toFixed(2)}</td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="px-2 py-1 ${statusClass} rounded text-xs font-semibold">
+                                ${order.status}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            console.log('[Orders] Render complete');
         }
 
         // Render watchlist table
@@ -375,6 +642,7 @@
                         
                         // Re-render table with new prices
                         renderWatchlist();
+                        renderPositions(); // Update P&L with live prices
                         
                         // Update status only if WebSocket is not active
                         if (!wsHandler || !wsHandler.ws || wsHandler.ws.readyState !== WebSocket.OPEN) {
@@ -589,6 +857,8 @@
                     alert(`Order ${currentOrder.side} executed successfully!\n\nExecuted Price: ₹${result.data.executed_price.toFixed(2)}\nOrder Value: ₹${result.data.order_value.toFixed(2)}`);
                     closeOrderPad();
                     loadUserAccount(); // Refresh account balance
+                    loadPositions(); // Refresh positions
+                    loadOrders(); // Refresh orders
                 } else {
                     alert(`Order failed: ${result.message}`);
                 }
@@ -713,6 +983,7 @@
                         prev_close: priceData[data.securityId]?.prev_close || data.ltp
                     };
                     renderWatchlist();
+                    renderPositions(); // Update P&L with live prices
                     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
                 };
                 
@@ -839,6 +1110,8 @@
             await loadSettings();
             await loadUserAccount();
             await loadWatchlist();
+            await loadPositions();
+            await loadOrders();
             
             // Update market status
             updateMarketStatus();
