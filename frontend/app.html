@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>DhanHQ Trading</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * {
+            -webkit-tap-highlight-color: transparent;
+            -webkit-touch-callout: none;
+        }
+        
+        body {
+            overscroll-behavior: none;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        
+        /* Hide scrollbar but keep functionality */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        
+        /* Tab content animation */
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.2s ease-in;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Bottom nav animation */
+        .nav-item {
+            transition: all 0.2s ease;
+        }
+        .nav-item.active {
+            color: #3b82f6;
+        }
+        
+        /* Pull to refresh indicator */
+        .refresh-indicator {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%) translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+        .refresh-indicator.pulling {
+            transform: translateX(-50%) translateY(0);
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+    <!-- Status Bar -->
+    <div class="bg-blue-600 px-4 py-2 flex items-center justify-between text-sm">
+        <div class="flex items-center gap-2">
+            <span id="marketStatus" class="font-semibold">●</span>
+            <span id="connectionStatus" class="text-xs">Loading...</span>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="lastUpdate" class="text-xs opacity-75">--:--</span>
+            <button onclick="openSettings()" class="text-white">⚙️</button>
+        </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div id="mainContent" class="pb-16 hide-scrollbar" style="height: calc(100vh - 96px); overflow-y: auto;">
+        
+        <!-- Watchlist Tab -->
+        <div id="watchlistTab" class="tab-content active">
+            <!-- Portfolio Summary Card -->
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 p-4 m-3 rounded-2xl shadow-lg">
+                <div class="text-sm opacity-90 mb-1">Available Funds</div>
+                <div id="availableFunds" class="text-3xl font-bold mb-3">₹0.00</div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="text-xs opacity-75">Total P&L</div>
+                        <div id="totalPnl" class="text-lg font-semibold">₹0.00</div>
+                    </div>
+                    <div>
+                        <div class="text-xs opacity-75">Day's P&L</div>
+                        <div id="dayPnl" class="text-lg font-semibold">₹0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Watchlist Items -->
+            <div id="watchlistContainer" class="px-3">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-lg font-semibold">Watchlist</h2>
+                    <a href="/instruments.html" class="text-blue-400 text-sm">+ Add</a>
+                </div>
+                <div id="watchlistItems" class="space-y-2">
+                    <div class="text-center py-12 text-gray-400">
+                        Loading watchlist...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Positions Tab -->
+        <div id="positionsTab" class="tab-content">
+            <div class="p-3">
+                <h2 class="text-lg font-semibold mb-3">Positions</h2>
+                <div id="positionsItems" class="space-y-2">
+                    <div class="text-center py-12 text-gray-400">
+                        No positions yet
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Orders Tab -->
+        <div id="ordersTab" class="tab-content">
+            <div class="p-3">
+                <h2 class="text-lg font-semibold mb-3">Orders</h2>
+                <div id="ordersItems" class="space-y-2">
+                    <div class="text-center py-12 text-gray-400">
+                        No orders yet
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Portfolio Tab -->
+        <div id="portfolioTab" class="tab-content">
+            <div class="p-3">
+                <h2 class="text-lg font-semibold mb-3">Portfolio</h2>
+                
+                <!-- Summary Cards -->
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="bg-gray-800 rounded-xl p-4">
+                        <div class="text-xs text-gray-400 mb-1">Total Value</div>
+                        <div id="portfolioValue" class="text-xl font-bold">₹0.00</div>
+                    </div>
+                    <div class="bg-gray-800 rounded-xl p-4">
+                        <div class="text-xs text-gray-400 mb-1">Invested</div>
+                        <div id="portfolioInvested" class="text-xl font-bold">₹0.00</div>
+                    </div>
+                </div>
+
+                <!-- Holdings -->
+                <div id="holdingsItems" class="space-y-2">
+                    <div class="text-center py-12 text-gray-400">
+                        No holdings yet
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-2 py-2 flex items-center justify-around">
+        <button onclick="switchTab('watchlist')" class="nav-item active flex flex-col items-center gap-1 px-4 py-2 rounded-lg">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <span class="text-xs">Watchlist</span>
+        </button>
+        
+        <button onclick="switchTab('positions')" class="nav-item flex flex-col items-center gap-1 px-4 py-2 rounded-lg">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span class="text-xs">Positions</span>
+        </button>
+        
+        <button onclick="switchTab('orders')" class="nav-item flex flex-col items-center gap-1 px-4 py-2 rounded-lg">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            <span class="text-xs">Orders</span>
+        </button>
+        
+        <button onclick="switchTab('portfolio')" class="nav-item flex flex-col items-center gap-1 px-4 py-2 rounded-lg">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <span class="text-xs">Portfolio</span>
+        </button>
+    </div>
+
+    <!-- Order Pad Modal (Bottom Sheet Style) -->
+    <div id="orderPadModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50" onclick="closeOrderPad(event)">
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-800 rounded-t-3xl p-6 max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()">
+            <div class="w-12 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            
+            <div class="flex items-center justify-between mb-4">
+                <div>
+                    <h3 id="orderPadTitle" class="text-xl font-bold">BUY</h3>
+                    <p id="orderPadInstrument" class="text-sm text-gray-400">Instrument</p>
+                </div>
+                <button onclick="closeOrderPad()" class="text-gray-400 text-2xl">&times;</button>
+            </div>
+
+            <!-- Product Type -->
+            <div class="mb-4">
+                <div class="text-sm text-gray-400 mb-2">Product</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="setProductType('DELIVERY')" id="orderCNC" class="py-3 bg-blue-600 rounded-xl font-semibold">
+                        CNC
+                    </button>
+                    <button onclick="setProductType('INTRADAY')" id="orderMIS" class="py-3 bg-gray-700 rounded-xl font-semibold">
+                        MIS
+                    </button>
+                </div>
+            </div>
+
+            <!-- Order Type -->
+            <div class="mb-4">
+                <div class="text-sm text-gray-400 mb-2">Order Type</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button onclick="setOrderType('MARKET')" id="orderMarket" class="py-3 bg-blue-600 rounded-xl font-semibold">
+                        Market
+                    </button>
+                    <button onclick="setOrderType('LIMIT')" id="orderLimit" class="py-3 bg-gray-700 rounded-xl font-semibold">
+                        Limit
+                    </button>
+                </div>
+            </div>
+
+            <!-- Quantity/Lots -->
+            <div class="mb-4">
+                <div class="text-sm text-gray-400 mb-2">
+                    <span id="quantityLabel">Quantity</span>
+                    <span id="lotInfo" class="text-xs text-blue-400 ml-2 hidden"></span>
+                </div>
+                <input type="number" id="orderQuantity" value="1" min="1" 
+                       oninput="updateOrderValue()"
+                       class="w-full bg-gray-700 rounded-xl px-4 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <!-- Limit Price (conditional) -->
+            <div id="limitPriceDiv" class="mb-4 hidden">
+                <div class="text-sm text-gray-400 mb-2">Limit Price</div>
+                <input type="number" id="orderLimitPrice" step="0.05" 
+                       oninput="updateOrderValue()"
+                       class="w-full bg-gray-700 rounded-xl px-4 py-3 text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <!-- Order Summary -->
+            <div class="bg-gray-700 rounded-xl p-4 mb-4">
+                <div class="flex justify-between mb-2">
+                    <span class="text-gray-400">LTP</span>
+                    <span id="orderLTP" class="font-semibold">₹0.00</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Order Value</span>
+                    <span id="orderValue" class="font-bold text-lg">₹0.00</span>
+                </div>
+            </div>
+
+            <!-- Submit Button -->
+            <button onclick="submitOrder()" id="submitOrderBtn" class="w-full py-4 bg-green-600 hover:bg-green-700 rounded-xl font-bold text-lg">
+                BUY NOW
+            </button>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50" onclick="closeSettings(event)">
+        <div class="absolute bottom-0 left-0 right-0 bg-gray-800 rounded-t-3xl p-6" onclick="event.stopPropagation()">
+            <div class="w-12 h-1 bg-gray-600 rounded-full mx-auto mb-4"></div>
+            
+            <h3 class="text-xl font-bold mb-4">Settings</h3>
+
+            <div class="mb-4">
+                <label class="text-sm text-gray-400 mb-2 block">Access Token</label>
+                <input type="text" id="accessToken" placeholder="Enter DhanHQ access token"
+                       class="w-full bg-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <div class="mb-6">
+                <label class="text-sm text-gray-400 mb-2 block">Client ID</label>
+                <input type="text" id="clientId" placeholder="Enter DhanHQ client ID"
+                       class="w-full bg-gray-700 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+
+            <button onclick="saveSettings()" class="w-full py-4 bg-blue-600 hover:bg-blue-700 rounded-xl font-bold mb-2">
+                Save
+            </button>
+            <button onclick="closeSettings()" class="w-full py-4 bg-gray-700 hover:bg-gray-600 rounded-xl font-bold">
+                Cancel
+            </button>
+        </div>
+    </div>
+
+    <script src="/websocket-handler.js"></script>
+    <script>
+        const API_BASE = '/api';
+        const USER_TOKEN = 'user_test123';
+        
+        let watchlistData = [];
+        let positionsData = [];
+        let ordersData = [];
+        let priceData = {};
+        let userSettings = null;
+        let userAccount = null;
+        let wsHandler = null;
+        let currentOrder = null;
+        
+        // Tab switching
+        function switchTab(tab) {
+            // Hide all tabs
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            
+            // Show selected tab
+            document.getElementById(tab + 'Tab').classList.add('active');
+            event.currentTarget.classList.add('active');
+            
+            // Load data for tab
+            if (tab === 'positions') loadPositions();
+            if (tab === 'orders') loadOrders();
+            if (tab === 'portfolio') loadPortfolio();
+        }
+        
+        // Initialize app
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadSettings();
+            await loadUserAccount();
+            await loadWatchlist();
+            updateDataSource();
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DhanHQ Watchlist - Backend WebSocket</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <div class="bg-blue-600 px-4 py-3 flex items-center justify-between">
+        <div>
+            <h1 class="text-xl font-bold">DhanHQ Watchlist</h1>
+            <p class="text-xs opacity-75">Backend WebSocket Architecture</p>
+        </div>
+        <div class="flex items-center gap-3">
+            <span id="connectionStatus" class="text-sm px-3 py-1 rounded-full bg-gray-700">Connecting...</span>
+            <span id="lastUpdate" class="text-xs">--:--</span>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="p-4 grid grid-cols-3 gap-3">
+        <div class="bg-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-400 mb-1">Available Funds</div>
+            <div id="availableFunds" class="text-xl font-bold text-green-400">₹0.00</div>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-400 mb-1">Total P&L</div>
+            <div id="totalPnl" class="text-xl font-bold">₹0.00</div>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-4">
+            <div class="text-xs text-gray-400 mb-1">Watchlist Items</div>
+            <div id="watchlistCount" class="text-xl font-bold">0</div>
+        </div>
+    </div>
+
+    <!-- Watchlist -->
+    <div class="p-4">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold">Watchlist</h2>
+            <a href="/instruments.html" class="text-blue-400 text-sm hover:underline">+ Add Instruments</a>
+        </div>
+        
+        <div id="watchlistContainer" class="space-y-2">
+            <div class="text-center py-12 text-gray-400">
+                Loading watchlist...
+            </div>
+        </div>
+    </div>
+
+    <script src="/backend-websocket-client.js"></script>
+    <script>
+        const API_BASE = '/api';
+        const USER_TOKEN = 'user_test123';
+        
+        let watchlistData = [];
+        let priceData = {};
+        let wsClient = null;
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            await loadUserAccount();
+            await loadWatchlist();
+            initializeWebSocket();
+        });
+        
+        // Load user account
+        async function loadUserAccount() {
+            try {
+                const response = await fetch(`${API_BASE}/user/account`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                const data = await response.json();
+                
+                document.getElementById('availableFunds').textContent = 
+                    `₹${data.funds_available.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                    
+            } catch (error) {
+                console.error('Failed to load account:', error);
+            }
+        }
+        
+        // Load watchlist
+        async function loadWatchlist() {
+            try {
+                const response = await fetch(`${API_BASE}/watchlist`, {
+                    headers: { 'X-User-Token': USER_TOKEN }
+                });
+                watchlistData = await response.json();
+                
+                document.getElementById('watchlistCount').textContent = watchlistData.length;
+                renderWatchlist();
+                
+            } catch (error) {
+                console.error('Failed to load watchlist:', error);
+            }
+        }
+        
+        // Initialize WebSocket
+        function initializeWebSocket() {
+            wsClient = new BackendWebSocketClient();
+            
+            wsClient.onConnectionStatus = (status) => {
+                const statusEl = document.getElementById('connectionStatus');
+                statusEl.textContent = `WebSocket: ${status}`;
+                
+                const colors = {
+                    'Connected': 'bg-green-600',
+                    'Subscribed': 'bg-green-600',
+                    'Disconnected': 'bg-gray-600',
+                    'Reconnecting': 'bg-yellow-600',
+                    'Error': 'bg-red-600',
+                    'Failed': 'bg-red-600'
+                };
+                
+                statusEl.className = `text-sm px-3 py-1 rounded-full ${colors[status] || 'bg-gray-700'}`;
+                
+                // Subscribe when connected
+                if (status === 'Connected' && watchlistData.length > 0) {
+                    subscribeToWatchlist();
+                }
+            };
+            
+            wsClient.onTicker = (ticker) => {
+                // Update price data
+                priceData[ticker.securityId] = {
+                    ltp: ticker.ltp,
+                    ltt: ticker.ltt
+                };
+                
+                // Update UI
+                renderWatchlist();
+                updateLastUpdate();
+            };
+            
+            wsClient.connect();
+        }
+        
+        // Subscribe to watchlist instruments
+        function subscribeToWatchlist() {
+            if (!watchlistData || watchlistData.length === 0) {
+                console.log('[Watchlist] No instruments to subscribe');
+                return;
+            }
+            
+            const instruments = watchlistData.map(item => ({
+                exchangeSegment: item.exchange_segment,
+                securityId: item.security_id
+            }));
+            
+            console.log(`[Watchlist] Subscribing to ${instruments.length} instruments`);
+            wsClient.subscribe(instruments);
+        }
+        
+        // Render watchlist
+        function renderWatchlist() {
+            const container = document.getElementById('watchlistContainer');
+            
+            if (!watchlistData || watchlistData.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <p>No instruments in watchlist</p>
+                        <a href="/instruments.html" class="text-blue-400 hover:underline mt-2 inline-block">Add instruments</a>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = watchlistData.map(item => {
+                const price = priceData[item.security_id];
+                const ltp = price ? price.ltp.toFixed(2) : '--';
+                const change = price && item.prev_close ? ((price.ltp - item.prev_close) / item.prev_close * 100).toFixed(2) : '0.00';
+                const changeColor = parseFloat(change) >= 0 ? 'text-green-400' : 'text-red-400';
+                
+                return `
+                    <div class="bg-gray-800 rounded-xl p-4 flex items-center justify-between hover:bg-gray-750 transition">
+                        <div class="flex-1">
+                            <div class="font-semibold">${item.trading_symbol}</div>
+                            <div class="text-xs text-gray-400">${item.exchange_segment}</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-lg font-bold">₹${ltp}</div>
+                            <div class="text-xs ${changeColor}">${change}%</div>
+                        </div>
+                        <div class="ml-4 flex gap-2">
+                            <button onclick="openOrderPad('BUY', '${item.security_id}')" 
+                                    class="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-semibold">
+                                BUY
+                            </button>
+                            <button onclick="openOrderPad('SELL', '${item.security_id}')" 
+                                    class="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg text-sm font-semibold">
+                                SELL
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Update last update time
+        function updateLastUpdate() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('lastUpdate').textContent = timeStr;
+        }
+        
+        // Order pad (placeholder)
+        function openOrderPad(side, securityId) {
+            alert(`Order pad for ${side} ${securityId} - Coming soon!`);
+        }
+        
+        // Update time every second
+        setInterval(updateLastUpdate, 1000);
+    </script>
+</body>
+</html>
+
