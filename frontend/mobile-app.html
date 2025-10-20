@@ -795,7 +795,7 @@
                 return;
             }
             
-            container.innerHTML = searchResults.map(item => {
+            container.innerHTML = searchResults.map((item, index) => {
                 const exchangeSegment = `${item.exchange}_${item.segment === 'D' ? 'FNO' : item.segment === 'E' ? 'EQ' : item.segment === 'C' ? 'CURRENCY' : item.segment}`;
                 
                 return `
@@ -806,7 +806,7 @@
                                 <div class="text-xs text-gray-500 mt-0.5">${item.display_name || item.instrument_name}</div>
                                 <div class="text-xs text-gray-400 mt-0.5">${exchangeSegment}</div>
                             </div>
-                            <button onclick="addToWatchlist('${item.security_id}', event)" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold active:bg-blue-700">
+                            <button onclick="addToWatchlist(${index}, event)" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold active:bg-blue-700">
                                 + Add
                             </button>
                         </div>
@@ -815,8 +815,13 @@
             }).join('');
         }
         
-        async function addToWatchlist(securityId, event) {
+        async function addToWatchlist(index, event) {
             event.stopPropagation();
+            
+            const item = searchResults[index];
+            if (!item) return;
+            
+            const exchangeSegment = `${item.exchange}_${item.segment === 'D' ? 'FNO' : item.segment === 'E' ? 'EQ' : item.segment === 'C' ? 'CURRENCY' : item.segment}`;
             
             try {
                 const response = await fetch(`${API_BASE}/watchlist`, {
@@ -825,15 +830,22 @@
                         'Content-Type': 'application/json',
                         'X-User-Token': USER_TOKEN
                     },
-                    body: JSON.stringify({ security_id: securityId })
+                    body: JSON.stringify({
+                        security_id: item.security_id,
+                        exchange_segment: exchangeSegment,
+                        trading_symbol: item.trading_symbol,
+                        display_name: item.display_name || item.instrument_name
+                    })
                 });
                 
                 if (response.ok) {
                     alert('Added to watchlist!');
+                    searchQuery = '';
+                    document.getElementById('searchInput').value = '';
                     await loadWatchlist();
                 } else {
                     const error = await response.json();
-                    alert(error.message || 'Failed to add to watchlist');
+                    alert(error.error || error.message || 'Failed to add to watchlist');
                 }
             } catch (error) {
                 console.error('Add to watchlist failed:', error);
