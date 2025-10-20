@@ -362,8 +362,8 @@
             if (!ws || !wsConnected || watchlistData.length === 0) return;
             
             const instruments = watchlistData.map(item => ({
-                exchange_segment: item.exchange_segment,
-                security_id: item.security_id
+                exchangeSegment: item.exchange_segment,
+                securityId: item.security_id
             }));
             
             ws.send(JSON.stringify({
